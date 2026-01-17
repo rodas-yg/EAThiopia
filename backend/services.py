@@ -1,8 +1,9 @@
 #communicates with USDA API to fetch nutritional data for food items logged by users.
 
-import requests
+import requests # pyright: ignore[reportMissingModuleSource]
 import json
 import os
+
 
 '''
 TODO: replace the api key with environment variable for better security.
@@ -49,4 +50,4 @@ def fetch_nutritional_data(food_item):
     except Exception as e:
         return json.dumps({"error": str(e)}), 500
 
-print(fetch_nutritional_data("Apple"))
+

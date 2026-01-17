@@ -1,0 +1,20 @@
+# Core Framework
+flask
+flask-cors
+python-dotenv
+
+# Database
+flask-sqlalchemy
+psycopg2-binary
+flask-migrate
+
+# Data Processing & API
+requests
+pandas
+numpy
+
+# Machine Learning
+scikit-learn
+
+
+authlib

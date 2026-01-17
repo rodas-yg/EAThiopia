@@ -10,7 +10,7 @@ class User(db.Model):
     google_id = db.Column(db.String(200), unique=True, nullable=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=True)
-    meal_logs = db.relationship('MealLog', backref='user', lazy=True)
+    meal_logs = db.relationship('MealLog', backref='user', )
     
 class MealLog(db.Model):
     __tablename__ = 'meal_logs'
