@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from models import db, User, MealLog, UserStats, Recipe, Ingredient, RecipeIngredient
 from flask_login import login_required, current_user
 from datetime import datetime
-from validators import validate_biometrics
+from validators import validate_biometrics, validate_meal_log, validate_email
 import requests
 from calculations import calculate_bmi, daily_caloric_needs
 
@@ -151,15 +151,34 @@ def add_user_stats(user_id):
         return jsonify({"error": str(e)}), 500
     
 #updates user stats such as weight, height, age, activity level, BMI, target, and target weight.
-@app.route('/api/user/<user_id>/stats', methods=['PUT'])
+@app.route('/api/user/<int:user_id>/stats', methods=['POST']) # Use POST for new history entries
 @login_required
 def update_user_stats(user_id):
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
+    user = User.query.get_or_404(user_id)
     data = request.get_json()
     
-   
+    try:
+        validate_biometrics(data) 
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+
+    new_stats = UserStats(
+        user_id=user.id,
+        weight=data.get('weight'),
+        weight_unit=data.get('weight_unit'),
+        height=data.get('height'),
+        height_unit=data.get('height_unit'),
+        date=datetime.utcnow() 
+    )
+
+    try:
+        db.session.add(new_stats)
+        db.session.commit()
+        return jsonify({"message": "New weight entry recorded!"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    
 with app.app_context():
     db.create_all()
 
