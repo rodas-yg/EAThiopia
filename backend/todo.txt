@@ -1,0 +1,5 @@
+Method,Endpoint,Description,Payload (Input),Response (Output)
+
+POST,/api/recipes,"Create Recipe. Saves the recipe ""Header"" and links multiple ingredients in the Association Table.","{ ""title"": ""Special Shiro"", ""user_id"": 1, ""ingredients"": [ {""id"": 5, ""amount"": 100}, ... ] }","{ ""recipe_id"": 10, ""message"": ""Recipe Created"" }"
+GET,/api/recipes/<uid>,List Recipes. Shows all recipes created by this user.,None,"[ { ""id"": 10, ""title"": ""Special Shiro"", ""total_calories"": 450 } ]"
+POST,/api/recipes/log,Eat a Recipe. Logs a whole recipe as a meal (sums up all ingredients automatically).,"{ ""user_id"": 1, ""recipe_id"": 10 }","{ ""message"": ""Logged Recipe as Meal"" }"

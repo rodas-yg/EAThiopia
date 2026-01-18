@@ -50,7 +50,9 @@ class Recipe(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     food = db.Column(db.String(100), nullable=False)
     instructions = db.Column(db.Text, nullable=False)
+    spoonacular_id = db.Column(db.Integer, unique=True, nullable=True)
     ingredients = db.relationship('RecipeIngredient', backref='recipe', lazy=True)
+    base_servings = db.Column(db.Integer, default=1)
 
 class Ingredient(db.Model):
     __tablename__ = 'ingredients'

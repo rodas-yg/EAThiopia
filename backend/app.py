@@ -4,7 +4,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 from validators import validate_biometrics, validate_meal_log, validate_email
 from calculations import calculate_bmi, daily_caloric_needs
-from services import fetch_nutritional_data
+from services import fetch_nutritional_data, get_recipe_with_cache, format_recipe_with_servings
 
 app = Flask(__name__)
 
@@ -214,7 +214,7 @@ def log_meal(user_id):
             fats=data.get('fats'),
             carbs=data.get('carbs'),
             calories=data.get('calories'),
-            date=datetime.utcnow()
+            date=datetime.now(utc=True)
         )
         db.session.add(new_meal)
         db.session.commit()
@@ -238,7 +238,7 @@ def get_meal_log(user_id):
     } for meal in meals]
     return jsonify(meal_list), 200
 
-#get histoey of meal logs
+#get history of meal logs
 @app.route('/api/user/<int:user_id>/meal-log/history', methods=['GET'])
 @login_required
 def get_meal_log_history(user_id):
@@ -268,6 +268,42 @@ def delete_meal_log_entry(user_id, meal_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+#delete meal a meal log
+@app.route('/api/user/<int:user_id>/meal-log', methods=['DELETE'])
+@login_required
+def delete_meal_log(user_id):
+    try:
+        MealLog.query.filter_by(user_id=user_id).delete()
+        db.session.commit()
+        return jsonify({"message": "All meal log entries deleted successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    
+#***********************Recipe Management Routes*************************/
+
+@app.route('/api/recipes', methods=['POST'])
+@login_required
+def create_recipe():
+    data = request.get_json() 
+    food = data.get('food')
+    ingredients = data.get('ingredients') #needs to be a list
+    instructions = data.get('instructions') #list of string
+    
+#get recpie
+@app.route('/api/recipes/<int:recipe_id>', methods=['GET'])
+@login_required
+def get_recipe(recipe_id):
+    source = request.args.get('source', 'local')
+    servings = request.args.get('servings', type=int)
+    recipe = get_recipe_with_cache(recipe_id, source=source)
+    
+    if not recipe:
+        return jsonify({"error": "Recipe not found"}), 404
+    if not servings:
+        servings = recipe.base_servings
+    data = format_recipe_with_servings(recipe, servings)
+    return jsonify(data), 200
 
 with app.app_context():
     db.create_all()
