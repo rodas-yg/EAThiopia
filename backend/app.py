@@ -4,7 +4,7 @@ from flask_login import login_required, current_user
 from datetime import datetime
 from validators import validate_biometrics, validate_meal_log, validate_email
 from calculations import calculate_bmi, daily_caloric_needs
-from services import fetch_nutritional_data, get_recipe_with_cache, format_recipe_with_servings
+from services import fetch_nutritional_data, get_recipe_with_cache, format_recipe_with_servings, _link_ingredient_to_recipe
 
 app = Flask(__name__)
 
@@ -289,8 +289,27 @@ def create_recipe():
     food = data.get('food')
     ingredients = data.get('ingredients') #needs to be a list
     instructions = data.get('instructions') #list of string
-    
-#get recpie
+    local_result = Recipe.query.filter_by(food=food).first()
+    if local_result:
+        return jsonify({"error": "Recipe already exists"}), 400
+    try:
+        new_recipe = Recipe(
+            food=food,
+            instructions="\n".join(instructions),
+            base_servings=data.get('base_servings', 1)
+        )
+        db.session.add(new_recipe)
+        db.session.commit()
+        for ing_data in ingredients:
+            _link_ingredient_to_recipe(new_recipe.id, ing_data)
+
+        db.session.commit()
+        return jsonify({"message": "Recipe created", "recipe_id": new_recipe.id}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+#get recipe
 @app.route('/api/recipes/<int:recipe_id>', methods=['GET'])
 @login_required
 def get_recipe(recipe_id):

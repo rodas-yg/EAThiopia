@@ -66,11 +66,10 @@ def get_recipe_with_cache(recipe_id, source='local'):
             title=api_data['title'],
             instructions=api_data['instructions'],
             spoonacular_id=recipe_id,
-            base_servings=api_data['servings'],
+            base_servings=api_data.get('servings', 1),
             total_calories=api_data.get('calories', 0)
         )
         db.session.add(new_recipe)
-        
         for ing in api_data['ingredients']:
             _link_ingredient_to_recipe(new_recipe.id, ing)
             
