@@ -3,11 +3,6 @@ import json
 import os
 from models import Recipe, db, Ingredient, RecipeIngredient
 
-'''
-TODO: replace the api key with environment variable for better security.
-'''
-
-
 
 
 
@@ -56,12 +51,17 @@ def get_recipe_with_cache(recipe_id, source='local'):
     Retrieves recipe. If it's a new Spoonacular ID, it saves it locally first.
     """
     if source == 'spoonacular':
+        # 1. Search by spoonacular_id
         cached = Recipe.query.filter_by(spoonacular_id=recipe_id).first()
         if cached:
             return cached
 
+        # 2. Fetch from API
         api_data = _fetch_from_spoonacular_api(recipe_id)
+        if not api_data:
+            return None
         
+        # 3. Save to DB
         new_recipe = Recipe(
             title=api_data['title'],
             instructions=api_data['instructions'],
@@ -70,14 +70,15 @@ def get_recipe_with_cache(recipe_id, source='local'):
             total_calories=api_data.get('calories', 0)
         )
         db.session.add(new_recipe)
+        db.session.flush() # Get ID for the linker
+
         for ing in api_data['ingredients']:
             _link_ingredient_to_recipe(new_recipe.id, ing)
             
         db.session.commit()
-        return new_recipe
+        return new_recipe 
 
     return Recipe.query.get(recipe_id)
-
 
 def _link_ingredient_to_recipe(recipe_id, api_ingredient_data):
     """
@@ -92,14 +93,13 @@ def _link_ingredient_to_recipe(recipe_id, api_ingredient_data):
 
     if not ingredient:
         ingredient = Ingredient(
-            name=name,
-            unit=unit,
-
-            calories=0, 
-            protein=0,
-            carbs=0,
-            fats=0
-        )
+    name=name,
+    unit=unit,
+    calories_per_unit=0, 
+    protein_per_unit=0,
+    carbs_per_unit=0,
+    fats_per_unit=0
+)
         db.session.add(ingredient)
         db.session.flush()
 

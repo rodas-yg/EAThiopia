@@ -58,6 +58,7 @@ class Ingredient(db.Model):
     __tablename__ = 'ingredients'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    unit = db.Column(db.String(20), nullable=True)
     calories_per_unit = db.Column(db.Float, nullable=False)
     protein_per_unit = db.Column(db.Float, nullable=False)
     carbs_per_unit = db.Column(db.Float, nullable=False)

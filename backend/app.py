@@ -1,11 +1,11 @@
 from flask import Flask, request, jsonify
 from models import db, User, MealLog, UserStats, Recipe, Ingredient, RecipeIngredient
 from flask_login import login_required, current_user
-from datetime import datetime
+from datetime import datetime, timezone
 from validators import validate_biometrics, validate_meal_log, validate_email
 from calculations import calculate_bmi, daily_caloric_needs
 from services import fetch_nutritional_data, get_recipe_with_cache, format_recipe_with_servings, _link_ingredient_to_recipe
-
+from seed import seed_ingredients
 app = Flask(__name__)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://rodasgeberhiwet:rodas1018@localhost:5432/eathiopia_db'
@@ -180,41 +180,64 @@ def update_user_stats(user_id):
 # #/
 
 #hybrid food search from either local database or USDA API
-@app.route('/api/food/search/<query>', methods=['GET'])
-@login_required
-def search_food(query):
+@app.route('/api/food/search/<query>/<int:user_id>', methods=['GET'])
+def search_food(query, user_id):
+    """Searches for food and automatically logs it to the user's history."""
+    
     local_result = Ingredient.query.filter(Ingredient.name.ilike(f"%{query}%")).first()
+    
+    food_data = None
     if local_result:
-        return jsonify({
-            "meal_name": local_result.meal_name,
+        food_data = {
+            "meal_name": local_result.name,
             "protein": local_result.protein,
             "fats": local_result.fats,
             "carbs": local_result.carbs,
             "calories": local_result.calories
-        }), 200
-    
-    usda_result, status_code = fetch_nutritional_data(query)
-    log_meal(current_user.id, usda_result)
-    return jsonify(usda_result), status_code
+        }
+    else:
+        usda_result, status_code = fetch_nutritional_data(query)
+        if status_code == 200:
+            food_data = usda_result
+            
+    if not food_data:
+        return jsonify({"error": "Food not found"}), 404
 
+    try:
+        new_log = MealLog(
+            user_id=user_id,
+            meal_name=food_data['meal_name'],
+            protein=food_data['protein'],
+            fats=food_data['fats'],
+            carbs=food_data['carbs'],
+            calories=food_data['calories'],
+            date=datetime.now(timezone.utc)
+        )
+        db.session.add(new_log)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"Logging failed: {e}")
 
-#adds to users meal log
+    return jsonify(food_data), 200
+
+#adds searched meal to meal log
 @app.route('/api/user/<int:user_id>/meal-log', methods=['POST'])
-@login_required
 def log_meal(user_id):
     data = request.get_json()
     errors = validate_meal_log(data)
     if errors:
         return jsonify({"errors": errors}), 400
+        
     try:
         new_meal = MealLog(
             user_id=user_id,
             meal_name=data.get('food_name'),
-            protein=data.get('protein'),
-            fats=data.get('fats'),
-            carbs=data.get('carbs'),
-            calories=data.get('calories'),
-            date=datetime.now(utc=True)
+            protein=data.get('protein', 0),
+            fats=data.get('fats', 0),
+            carbs=data.get('carbs', 0),
+            calories=data.get('calories', 0),
+            date=datetime.now(timezone.utc)
         )
         db.session.add(new_meal)
         db.session.commit()
@@ -227,6 +250,15 @@ def log_meal(user_id):
 @app.route('/api/user/<int:user_id>/meal-log', methods=['GET'])
 @login_required
 def get_meal_log(user_id):
+    """Retrieve a user's meal log entries for the specified user.
+    This endpoint returns a list of meals with their nutritional details and timestamps.
+
+    Args:
+        user_id (int): The unique identifier of the user whose meal log is being requested.
+
+    Returns:
+        Response: A JSON response containing a list of meal entries and a 200 status code.
+    """
     meals = MealLog.query.filter_by(user_id=user_id).all()
     meal_list = [{
         "meal_name": meal.meal_name,
@@ -283,23 +315,24 @@ def delete_meal_log(user_id):
 #***********************Recipe Management Routes*************************/
 
 @app.route('/api/recipes', methods=['POST'])
-@login_required
 def create_recipe():
     data = request.get_json() 
     food = data.get('food')
-    ingredients = data.get('ingredients') #needs to be a list
-    instructions = data.get('instructions') #list of string
-    local_result = Recipe.query.filter_by(food=food).first()
-    if local_result:
+    ingredients = data.get('ingredients') 
+    instructions = data.get('instructions')
+    
+    if Recipe.query.filter_by(food=food).first():
         return jsonify({"error": "Recipe already exists"}), 400
+        
     try:
         new_recipe = Recipe(
             food=food,
-            instructions="\n".join(instructions),
+            instructions=instructions, 
             base_servings=data.get('base_servings', 1)
         )
         db.session.add(new_recipe)
-        db.session.commit()
+        db.session.flush() 
+
         for ing_data in ingredients:
             _link_ingredient_to_recipe(new_recipe.id, ing_data)
 
@@ -328,4 +361,5 @@ with app.app_context():
     db.create_all()
 
 if __name__ == "__main__":
+    seed_ingredients()
     app.run(debug=True)
