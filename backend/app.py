@@ -2,8 +2,9 @@ from flask import Flask, request, jsonify
 from models import db, User, MealLog, UserStats, Recipe, Ingredient, RecipeIngredient
 from flask_login import login_required, current_user
 from datetime import datetime
-import json
+from validators import validate_biometrics
 import requests
+from calculations import calculate_bmi, daily_caloric_needs
 
 app = Flask(__name__)
 
@@ -115,6 +116,50 @@ def update_user_profile(user_id):
 @login_required
 def add_user_stats(user_id):
     user = User.query.get(user_id)
+    
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    data = request.get_json()
+    weight = data.get('weight')
+    weight_unit = data.get('weight_unit', 'kg')
+    height = data.get('height')
+    height_unit = data.get('height_unit', 'cm')
+    age = data.get('age')
+    activity_level = data.get('activity_level')
+    try:
+        bmi = calculate_bmi(weight, weight_unit, height, height_unit)
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    
+    try:
+        new_stats = UserStats(
+            user_id=user.id,
+            weight=weight,
+            height=height,
+            age=age,
+            activity_level=activity_level,
+            bmi=bmi,
+            target=data.get('target'),
+            target_weight=data.get('target_weight')
+        )
+        db.session.add(new_stats)
+        db.session.commit()
+        return jsonify({"message": "User stats added successfully"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    
+#updates user stats such as weight, height, age, activity level, BMI, target, and target weight.
+@app.route('/api/user/<user_id>/stats', methods=['PUT'])
+@login_required
+def update_user_stats(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    data = request.get_json()
+    
+   
 with app.app_context():
     db.create_all()
 

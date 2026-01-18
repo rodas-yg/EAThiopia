@@ -7,7 +7,7 @@ def calculate_bmi(weight,weight_unit, height, height_unit, height_inches=0):
         height (float): Height of the user in meters.
         height_unit (str): Unit of height ('cm', or 'inches').
     Returns:
-        float: Calculated BMI value.
+        Calculated BMI value.
     """
 
     
@@ -26,9 +26,8 @@ def calculate_bmi(weight,weight_unit, height, height_unit, height_inches=0):
 
 def daily_caloric_needs(weight, weight_unit, height, height_unit, age, activity_level, goal):
     if is_weight_valid(weight, weight_unit) and is_height_valid(height, height_unit):
-        # Calculate BMR (Basal Metabolic Rate) using Mifflin-St Jeor Equation
         if weight_unit == 'lbs':
-            weight = weight * 0.453592  # Convert pounds to kilograms
+            weight = weight * 0.453592  
         if height_unit == 'cm':
             height = height / 100  # Convert centimeters to meters
         elif height_unit == 'inches':
@@ -47,9 +46,9 @@ def daily_caloric_needs(weight, weight_unit, height, height_unit, age, activity_
             caloric_needs = bmr * 1.9
 
         if goal == 'lose_weight':
-            caloric_needs -= 500  # Create a deficit
+            caloric_needs -= 500 
         elif goal == 'gain_weight':
-            caloric_needs += 500  # Create a surplus
+            caloric_needs += 500 
 
         return round(caloric_needs, 2)
     else:
