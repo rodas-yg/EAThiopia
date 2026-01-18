@@ -3,8 +3,8 @@ from models import db, User, MealLog, UserStats, Recipe, Ingredient, RecipeIngre
 from flask_login import login_required, current_user
 from datetime import datetime
 from validators import validate_biometrics, validate_meal_log, validate_email
-import requests
 from calculations import calculate_bmi, daily_caloric_needs
+from services import fetch_nutritional_data
 
 app = Flask(__name__)
 
@@ -12,11 +12,6 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://rodasgeberhiwet:rodas1018@
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
-
-def login_required(f):
-    def decorated_function(*args, **kwargs):
-        return f(*args, **kwargs)
-    return decorated_function   
 
 @app.route('/')
 def home():
@@ -151,7 +146,7 @@ def add_user_stats(user_id):
         return jsonify({"error": str(e)}), 500
     
 #updates user stats such as weight, height, age, activity level, BMI, target, and target weight.
-@app.route('/api/user/<int:user_id>/stats', methods=['POST']) # Use POST for new history entries
+@app.route('/api/user/<int:user_id>/stats', methods=['PUT'])
 @login_required
 def update_user_stats(user_id):
     user = User.query.get_or_404(user_id)
@@ -179,6 +174,101 @@ def update_user_stats(user_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
     
+
+
+#*************************** Food log and tracking ***********************
+# #/
+
+#hybrid food search from either local database or USDA API
+@app.route('/api/food/search/<query>', methods=['GET'])
+@login_required
+def search_food(query):
+    local_result = Ingredient.query.filter(Ingredient.name.ilike(f"%{query}%")).first()
+    if local_result:
+        return jsonify({
+            "meal_name": local_result.meal_name,
+            "protein": local_result.protein,
+            "fats": local_result.fats,
+            "carbs": local_result.carbs,
+            "calories": local_result.calories
+        }), 200
+    
+    usda_result, status_code = fetch_nutritional_data(query)
+    log_meal(current_user.id, usda_result)
+    return jsonify(usda_result), status_code
+
+
+#adds to users meal log
+@app.route('/api/user/<int:user_id>/meal-log', methods=['POST'])
+@login_required
+def log_meal(user_id):
+    data = request.get_json()
+    errors = validate_meal_log(data)
+    if errors:
+        return jsonify({"errors": errors}), 400
+    try:
+        new_meal = MealLog(
+            user_id=user_id,
+            meal_name=data.get('food_name'),
+            protein=data.get('protein'),
+            fats=data.get('fats'),
+            carbs=data.get('carbs'),
+            calories=data.get('calories'),
+            date=datetime.utcnow()
+        )
+        db.session.add(new_meal)
+        db.session.commit()
+        return jsonify({"message": "Meal logged successfully"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+#get users meal log
+@app.route('/api/user/<int:user_id>/meal-log', methods=['GET'])
+@login_required
+def get_meal_log(user_id):
+    meals = MealLog.query.filter_by(user_id=user_id).all()
+    meal_list = [{
+        "meal_name": meal.meal_name,
+        "protein": meal.protein,
+        "fats": meal.fats,
+        "carbs": meal.carbs,
+        "calories": meal.calories,
+        "date": meal.date.strftime("%Y-%m-%d %H:%M:%S")
+    } for meal in meals]
+    return jsonify(meal_list), 200
+
+#get histoey of meal logs
+@app.route('/api/user/<int:user_id>/meal-log/history', methods=['GET'])
+@login_required
+def get_meal_log_history(user_id):
+    meals = MealLog.query.filter_by(user_id=user_id).order_by(MealLog.date.desc()).all()
+    meal_history = [{
+        "meal_name": meal.meal_name,
+        "protein": meal.protein,
+        "fats": meal.fats,
+        "carbs": meal.carbs,
+        "calories": meal.calories,
+        "date": meal.date.strftime("%Y-%m-%d %H:%M:%S")
+    } for meal in meals]
+    return jsonify(meal_history), 200
+
+#delete a meal log entry
+@app.route('/api/user/<int:user_id>/meal-log/<int:meal_id>', methods=['DELETE'])
+@login_required
+def delete_meal_log_entry(user_id, meal_id):
+    meal = MealLog.query.filter_by(id=meal_id, user_id=user_id).first()
+    if not meal:
+        return jsonify({"error": "Meal log entry not found"}), 404
+    try:
+        db.session.delete(meal)
+        db.session.commit()
+        return jsonify({"message": "Meal log entry deleted successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
 with app.app_context():
     db.create_all()
 
