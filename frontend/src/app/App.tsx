@@ -13,7 +13,7 @@ import { Utensils, LogOut, BarChart3, Home, Loader2 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { TibebPattern } from "./components/TibebPattern";
 import { motion } from "motion/react";
-import { Toaster, toast } from 'sonner'; // Ensure you have this installed: npm install sonner
+import { Toaster, toast } from 'sonner';
 
 // ⚠️ YOUR CLIENT ID
 const GOOGLE_CLIENT_ID = "191012445356-023kbidcgpfvrevfavcuvgp3nieaq3v5.apps.googleusercontent.com";
@@ -64,10 +64,8 @@ export default function App() {
       const res = await fetch(`http://127.0.0.1:5000/api/user/${id}/stats/latest`);
       if (res.ok) {
         const data = await res.json();
-
         if (data.calorie_target) setCalorieTarget(data.calorie_target); 
       } else {
-
         if (res.status === 404) setAppState("onboarding");
       }
     } catch (err) {
@@ -81,10 +79,10 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         const formattedMeals = data.map((m: any) => ({
-            id: m.id || Math.random().toString(), 
+            id: m.id, // Use the REAL ID from database
             foodName: m.meal_name,
             calories: m.calories,
-            servings: 1, 
+            servings: 1, // Default if not stored
             timestamp: new Date(m.date)
         }));
         setMeals(formattedMeals);
@@ -95,6 +93,7 @@ export default function App() {
   };
 
 
+  // --- 3. EVENT HANDLERS ---
   const handleAuth = (email: string) => {
     window.location.reload(); 
   };
@@ -103,8 +102,6 @@ export default function App() {
     setUserName(data.name);
     setCalorieTarget(data.calorieTarget);
     setAppState('app');
-    
-    // Refresh page to ensure clean state
     window.location.reload();
   };
 
@@ -116,13 +113,19 @@ export default function App() {
     }
   };
 
+  // --- ADD MEAL (With ID Swapping) ---
   const handleAddMeal = async (meal: Omit<MealEntry, 'id' | 'timestamp'>) => {
+    // 1. Generate a temp ID so React can render it immediately
+    const tempId = "temp-" + Date.now();
+    
     const newMeal: MealEntry = {
       ...meal,
-      id: Date.now().toString(),
+      id: tempId,
       timestamp: new Date(),
     };
-    setMeals([...meals, newMeal]);
+    
+    // Add to UI immediately
+    setMeals(prev => [...prev, newMeal]);
 
     try {
         const res = await fetch(`http://127.0.0.1:5000/api/user/${userId}/meal-log`, {
@@ -131,26 +134,37 @@ export default function App() {
             body: JSON.stringify({
                 food_name: meal.foodName,
                 calories: meal.calories,
-                protein: 0, // You can add these to MealEntry interface later
+                amount: meal.servings, // <--- CRITICAL FIX: Send amount to prevent 5000 error
+                protein: 0, 
                 carbs: 0,
                 fats: 0
             })
         });
         
         if (res.ok) {
+            const data = await res.json();
             toast.success("Meal logged successfully!");
+            
+            // 2. SWAP ID: Replace temp ID with the real Database ID
+            if (data.id) {
+                setMeals(prevMeals => prevMeals.map(m => 
+                    m.id === tempId ? { ...m, id: data.id } : m
+                ));
+            }
         } else {
             toast.error("Failed to save meal to server.");
+            // Remove the meal if it failed
+            setMeals(prev => prev.filter(m => m.id !== tempId));
         }
     } catch (err) {
         console.error(err);
         toast.error("Connection error.");
+        setMeals(prev => prev.filter(m => m.id !== tempId));
     }
   };
 
-  // In src/app/App.tsx
-
-const handleRemoveMeal = async (id: string | number) => {
+  // --- REMOVE MEAL ---
+  const handleRemoveMeal = async (id: string | number) => {
     // 1. Optimistic UI Update (Remove it immediately from screen)
     const oldMeals = [...meals];
     setMeals(meals.filter(meal => meal.id !== id));
@@ -175,14 +189,13 @@ const handleRemoveMeal = async (id: string | number) => {
             setMeals(oldMeals);
         }
     }
-};
+  };
 
   const handleAddFromDatabase = (food: EthiopianFood) => {
     handleAddMeal({
       foodName: food.name,
       calories: food.calories,
       servings: 1,
-      
     });
   };
 

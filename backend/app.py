@@ -216,9 +216,10 @@ def search_food(query, user_id):
 @app.route('/api/user/<int:user_id>/meal-log', methods=['POST'])
 def log_meal(user_id):
     data = request.get_json()
-    # errors = validate_meal_log(data)
-    # if errors:
-    #     return jsonify({"errors": errors}), 400
+    
+    # Simple validation inline to match your request style
+    if not data.get('food_name'):
+        return jsonify({"error": "Food name required"}), 400
         
     try:
         new_meal = MealLog(
@@ -232,26 +233,24 @@ def log_meal(user_id):
         )
         db.session.add(new_meal)
         db.session.commit()
-        return jsonify({"message": "Meal logged successfully"}), 201
+        
+        return jsonify({
+            "message": "Meal logged successfully", 
+            "id": new_meal.id 
+        }), 201
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
-
 #get users meal log
 @app.route('/api/user/<int:user_id>/meal-log', methods=['GET'])
-@login_required
 def get_meal_log(user_id):
-    """Retrieve a user's meal log entries for the specified user.
-    This endpoint returns a list of meals with their nutritional details and timestamps.
-
-    Args:
-        user_id (int): The unique identifier of the user whose meal log is being requested.
-
-    Returns:
-        Response: A JSON response containing a list of meal entries and a 200 status code.
     """
-    meals = MealLog.query.filter_by(user_id=user_id).all()
+    Fetch all meals for the user.
+    """
+    meals = MealLog.query.filter_by(user_id=user_id).order_by(MealLog.date.desc()).all()
     meal_list = [{
+        "id": meal.id,  
         "meal_name": meal.meal_name,
         "protein": meal.protein,
         "fats": meal.fats,
@@ -278,7 +277,6 @@ def get_meal_log_history(user_id):
 
 #delete a meal log entry
 @app.route('/api/user/<int:user_id>/meal-log/<int:meal_id>', methods=['DELETE'])
-@login_required
 def delete_meal_log_entry(user_id, meal_id):
     meal = MealLog.query.filter_by(id=meal_id, user_id=user_id).first()
     if not meal:
@@ -286,7 +284,7 @@ def delete_meal_log_entry(user_id, meal_id):
     try:
         db.session.delete(meal)
         db.session.commit()
-        return jsonify({"message": "Meal log entry deleted successfully"}), 200
+        return jsonify({"message": "Meal deleted"}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
