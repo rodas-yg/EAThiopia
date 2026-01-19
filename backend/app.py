@@ -30,13 +30,11 @@ def google_auth():
     if not token:
         return jsonify({"error": "Missing token"}), 400
 
-    # 1. Verify with Google
     user_info = verify_google_token(token)
     
     if not user_info:
         return jsonify({"error": "Invalid Google Token"}), 401
 
-    # 2. Check/Create User in DB
     email = user_info['email']
     google_id = user_info['google_id']
     name = user_info.get('name', 'User')
@@ -44,7 +42,6 @@ def google_auth():
     user = User.query.filter_by(google_id=google_id).first()
 
     if not user:
-        # Register new user
         print(f"Creating new user: {email}")
         user = User(
             username=name,
@@ -54,7 +51,6 @@ def google_auth():
         db.session.add(user)
         db.session.commit()
     
-    # 3. Return User ID to Frontend
     return jsonify({
         "message": "Login successful",
         "user_id": user.id,

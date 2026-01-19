@@ -13,12 +13,12 @@ def calculate_bmi(weight,weight_unit, height, height_unit, height_inches=0):
     
     if is_height_valid and is_weight_valid:
         if weight_unit == 'lbs':
-            weight = weight * 0.453592  # Convert pounds to kilograms
+            weight = weight * 0.453592  
         if height_unit == 'cm':
-            height = height / 100  # Convert centimeters to meters
+            height = height / 100  # to meters
         elif height_unit == 'inches':
             total_height_inches = height + height_inches
-            height = total_height_inches * 0.0254  # Convert inches to meters
+            height = total_height_inches * 0.0254  #
         bmi = weight / (height ** 2)
         return round(bmi, 2)
     else:
@@ -29,7 +29,7 @@ def daily_caloric_needs(weight, weight_unit, height, height_unit, age, activity_
         if weight_unit == 'lbs':
             weight = weight * 0.453592  
         if height_unit == 'cm':
-            height = height / 100  # Convert centimeters to meters
+            height = height / 100
         elif height_unit == 'inches':
             height = height * 0.0254  # Convert inches to meters
 
