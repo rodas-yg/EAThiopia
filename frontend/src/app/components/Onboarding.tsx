@@ -4,8 +4,7 @@ import { Card, CardContent } from "./ui/card";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
-import { Utensils, Target, TrendingUp, ChevronRight, ChevronLeft } from "lucide-react";
-import { EthiopianPattern } from "./EthiopianPattern";
+import { Utensils, Target, TrendingUp, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { TibebPattern } from "./TibebPattern";
 
@@ -17,6 +16,8 @@ export interface OnboardingData {
   name: string;
   age: number;
   gender: string;
+  weight: number; 
+  height: number; 
   activityLevel: string;
   goal: string;
   targetWeight?: number;
@@ -25,17 +26,23 @@ export interface OnboardingData {
 
 export function Onboarding({ onComplete }: OnboardingProps) {
   const [step, setStep] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [data, setData] = useState<Partial<OnboardingData>>({
     activityLevel: "moderate",
     goal: "maintain",
+    gender: "male"
   });
 
   const calculateCalories = () => {
     // Simple BMR calculation (Mifflin-St Jeor)
+    const weight = data.weight || 70;
+    const height = data.height || 170;
     const age = data.age || 30;
     const gender = data.gender || "male";
     
-    let bmr = gender === "male" ? 2200 : 1800;
+    // Mifflin-St Jeor Equation
+    let bmr = (10 * weight) + (6.25 * height) - (5 * age);
+    bmr += gender === "male" ? 5 : -161;
     
     // Adjust for activity level
     const activityMultiplier = {
@@ -55,17 +62,63 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     return calories;
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (step === 2) {
+      // --- FINAL STEP: SAVE TO BACKEND ---
+      setLoading(true);
       const calorieTarget = calculateCalories();
-      onComplete({ ...data, calorieTarget } as OnboardingData);
+      const userId = localStorage.getItem('user_id');
+
+      if (!userId) {
+        console.error("No User ID found!");
+        setLoading(false);
+        return;
+      }
+
+      try {
+
+        await fetch(`http://127.0.0.1:5000/api/user/${userId}/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: data.name })
+        });
+
+
+        const response = await fetch(`http://127.0.0.1:5000/api/user/${userId}/stats`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            weight: data.weight,
+            height: data.height,
+            age: data.age,
+            activity_level: data.activityLevel,
+            target: data.goal,
+            target_weight: data.targetWeight 
+          })
+        });
+
+        if (response.ok) {
+           console.log("✅ Stats saved successfully!");
+           onComplete({ ...data, calorieTarget } as OnboardingData);
+        } else {
+           console.error("Failed to save stats");
+           alert("Something went wrong saving your profile. Please try again.");
+        }
+
+      } catch (error) {
+        console.error("Network Error:", error);
+        alert("Could not connect to server.");
+      } finally {
+        setLoading(false);
+      }
+
     } else {
       setStep(step + 1);
     }
   };
 
   const canProceed = () => {
-    if (step === 0) return data.name && data.age && data.gender;
+    if (step === 0) return data.name && data.age && data.gender && data.weight && data.height;
     if (step === 1) return data.activityLevel;
     if (step === 2) return data.goal;
     return true;
@@ -134,7 +187,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             </motion.div>
 
             <AnimatePresence mode="wait">
-              {/* Step 0: Personal Info */}
+              {/* Step 0: Personal Info & Biometrics */}
               {step === 0 && (
                 <motion.div
                   key="step0"
@@ -146,10 +199,10 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                 >
                   <div>
                     <h2 className="text-2xl font-semibold text-[#2d2520] mb-2">
-                      Welcome to Your Journey
+                      Tell us about yourself
                     </h2>
                     <p className="text-[#786f66]">
-                      Let's personalize your Ethiopian cuisine health experience
+                      We need this to calculate your personalized health plan
                     </p>
                   </div>
 
@@ -159,7 +212,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.1 }}
                     >
-                      <Label htmlFor="name">What should we call you?</Label>
+                      <Label htmlFor="name">Name</Label>
                       <Input
                         id="name"
                         placeholder="Your name"
@@ -195,7 +248,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                         <RadioGroup
                           value={data.gender}
                           onValueChange={(value) => setData({ ...data, gender: value })}
-                          className="flex gap-4 mt-2"
+                          className="flex gap-4 mt-3"
                         >
                           <div className="flex items-center space-x-2">
                             <RadioGroupItem value="male" id="male" />
@@ -208,6 +261,42 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                         </RadioGroup>
                       </motion.div>
                     </div>
+
+                    {/* NEW FIELDS: HEIGHT & WEIGHT */}
+                    <div className="grid grid-cols-2 gap-4">
+                       <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.4 }}
+                      >
+                        <Label htmlFor="weight">Weight (kg)</Label>
+                        <Input
+                          id="weight"
+                          type="number"
+                          placeholder="70"
+                          value={data.weight || ""}
+                          onChange={(e) => setData({ ...data, weight: Number(e.target.value) })}
+                          className="mt-1.5 border-[#8b5a3c]/20 focus:border-[#8b5a3c] bg-[#f5f1ec]"
+                        />
+                      </motion.div>
+                      
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.5 }}
+                      >
+                        <Label htmlFor="height">Height (cm)</Label>
+                        <Input
+                          id="height"
+                          type="number"
+                          placeholder="175"
+                          value={data.height || ""}
+                          onChange={(e) => setData({ ...data, height: Number(e.target.value) })}
+                          className="mt-1.5 border-[#8b5a3c]/20 focus:border-[#8b5a3c] bg-[#f5f1ec]"
+                        />
+                      </motion.div>
+                    </div>
+
                   </div>
                 </motion.div>
               )}
@@ -344,6 +433,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                 <Button
                   variant="outline"
                   onClick={() => setStep(step - 1)}
+                  disabled={loading}
                   className="border-[#8b5a3c]/20 hover:bg-[#8b5a3c]/5"
                 >
                   <ChevronLeft className="w-4 h-4 mr-2" />
@@ -352,11 +442,20 @@ export function Onboarding({ onComplete }: OnboardingProps) {
               )}
               <Button
                 onClick={handleNext}
-                disabled={!canProceed()}
+                disabled={!canProceed() || loading}
                 className="flex-1 bg-[#8b5a3c] hover:bg-[#6b4423] text-white shadow-lg"
               >
-                {step === 2 ? "Get Started" : "Continue"}
-                <ChevronRight className="w-4 h-4 ml-2" />
+                {loading ? (
+                    <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Saving...
+                    </>
+                ) : (
+                    <>
+                        {step === 2 ? "Get Started" : "Continue"}
+                        {step !== 2 && <ChevronRight className="w-4 h-4 ml-2" />}
+                    </>
+                )}
               </Button>
             </motion.div>
           </CardContent>

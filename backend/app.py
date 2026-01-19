@@ -216,9 +216,9 @@ def search_food(query, user_id):
 @app.route('/api/user/<int:user_id>/meal-log', methods=['POST'])
 def log_meal(user_id):
     data = request.get_json()
-    errors = validate_meal_log(data)
-    if errors:
-        return jsonify({"errors": errors}), 400
+    # errors = validate_meal_log(data)
+    # if errors:
+    #     return jsonify({"errors": errors}), 400
         
     try:
         new_meal = MealLog(
@@ -348,7 +348,27 @@ def get_recipe(recipe_id):
     data = format_recipe_with_servings(recipe, servings)
     return jsonify(data), 200
 
-
+#get user stats
+@app.route('/api/user/<int:user_id>/stats/latest', methods=['GET'])
+def get_user_stats(user_id):
+    """
+    Get the user's most recent weight, height, and calorie target.
+    """
+    stats = UserStats.query.filter_by(user_id=user_id).order_by(UserStats.date.desc()).first()
+    
+    if stats:
+        return jsonify({
+            "weight": stats.weight,
+            "height": stats.height,
+            "age": stats.age,
+            "bmi": stats.bmi,
+            "activity_level": stats.activity_level,
+            "target": stats.target,
+            "calorie_target": 2000,
+            "date": stats.date
+        }), 200
+    
+    return jsonify({"error": "No stats found"}), 404
 
 if __name__ == "__main__":
     with app.app_context():

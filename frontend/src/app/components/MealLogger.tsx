@@ -8,8 +8,9 @@ import { Plus, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { TibebPattern } from "./TibebPattern";
 
+// 👇 CHANGED: id can be string OR number
 export interface MealEntry {
-  id: string;
+  id: string | number;
   foodName: string;
   calories: number;
   servings: number;
@@ -19,7 +20,8 @@ export interface MealEntry {
 interface MealLoggerProps {
   meals: MealEntry[];
   onAddMeal: (meal: Omit<MealEntry, 'id' | 'timestamp'>) => void;
-  onRemoveMeal: (id: string) => void;
+  // 👇 CHANGED: onRemoveMeal now accepts string OR number
+  onRemoveMeal: (id: string | number) => void;
 }
 
 export function MealLogger({ meals, onAddMeal, onRemoveMeal }: MealLoggerProps) {

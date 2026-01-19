@@ -68,10 +68,12 @@ def validate_meal_log(data):
     if not food_name or len(food_name) < 2:
         errors.append("A valid food name is required.")
     
-    if amount is None or amount <= 0:
+    # FIX: Use elif chain to prevent checking > 5000 if amount is None
+    if amount is None:
+        errors.append("Serving size (amount) is required.")
+    elif amount <= 0:
         errors.append("Serving size (amount) must be greater than zero.")
-    
-    if amount > 5000: 
+    elif amount > 5000: 
         errors.append("Serving size seems unrealistically large.")
 
     return errors

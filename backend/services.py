@@ -53,17 +53,14 @@ def get_recipe_with_cache(recipe_id, source='local'):
     Retrieves recipe. If it's a new Spoonacular ID, it saves it locally first.
     """
     if source == 'spoonacular':
-        # 1. Search by spoonacular_id
         cached = Recipe.query.filter_by(spoonacular_id=recipe_id).first()
         if cached:
             return cached
 
-        # 2. Fetch from API
         api_data = _fetch_from_spoonacular_api(recipe_id)
         if not api_data:
             return None
         
-        # 3. Save to DB
         new_recipe = Recipe(
             title=api_data['title'],
             instructions=api_data['instructions'],
@@ -72,7 +69,7 @@ def get_recipe_with_cache(recipe_id, source='local'):
             total_calories=api_data.get('calories', 0)
         )
         db.session.add(new_recipe)
-        db.session.flush() # Get ID for the linker
+        db.session.flush() 
 
         for ing in api_data['ingredients']:
             _link_ingredient_to_recipe(new_recipe.id, ing)
@@ -128,7 +125,7 @@ def _fetch_from_spoonacular_api(spoonacular_id):
 
     try:
         response = requests.get(url, params=params)
-        response.raise_for_status() # Raises an error for 4xx/5xx responses
+        response.raise_for_status() 
         data = response.json()
         steps = []
         if data.get('analyzedInstructions'):

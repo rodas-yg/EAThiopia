@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { GoogleOAuthProvider } from '@react-oauth/google'; // <--- Added Provider
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { CalorieTracker } from "./components/CalorieTracker";
 import { MealLogger, MealEntry } from "./components/MealLogger";
 import { EthiopianFoodDatabase, EthiopianFood } from "./components/EthiopianFoodDatabase";
@@ -9,86 +9,184 @@ import { MealSuggestions } from "./components/MealSuggestions";
 import { Onboarding, OnboardingData } from "./components/Onboarding";
 import { AuthPage } from "./components/AuthPage";
 import { Statistics } from "./components/Statistics";
-import { Utensils, LogOut, BarChart3, Home } from "lucide-react";
+import { Utensils, LogOut, BarChart3, Home, Loader2 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { TibebPattern } from "./components/TibebPattern";
 import { motion } from "motion/react";
+import { Toaster, toast } from 'sonner'; // Ensure you have this installed: npm install sonner
 
-// ⚠️ REPLACE THIS WITH YOUR REAL CLIENT ID FROM GOOGLE CLOUD
+// ⚠️ YOUR CLIENT ID
 const GOOGLE_CLIENT_ID = "191012445356-023kbidcgpfvrevfavcuvgp3nieaq3v5.apps.googleusercontent.com";
 
 type AppState = "auth" | "onboarding" | "app";
 type Page = "home" | "statistics";
 
 export default function App() {
-  // Check for 'user_id' instead of 'userEmail' to match your Backend Auth
-  const [appState, setAppState] = useState<AppState>(() => {
-    const hasAuth = localStorage.getItem('user_id'); 
-    const hasOnboarding = localStorage.getItem('onboardingComplete');
-    
-    if (!hasAuth) return "auth";
-    if (!hasOnboarding) return "onboarding";
-    return "app";
-  });
-
+  const [appState, setAppState] = useState<AppState>("auth");
   const [currentPage, setCurrentPage] = useState<Page>("home");
-  
-  // Initialize with data from LocalStorage (saved by AuthPage)
-  const [userEmail, setUserEmail] = useState(() => localStorage.getItem('userEmail') || '');
-  const [userName, setUserName] = useState(() => localStorage.getItem('username') || 'User');
+  const [loading, setLoading] = useState(true);
 
-  const [calorieTarget, setCalorieTarget] = useState(() => {
-    const saved = localStorage.getItem('calorieTarget');
-    return saved ? Number(saved) : 2000;
-  });
+  // User Data
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userName, setUserName] = useState("User");
+  const [calorieTarget, setCalorieTarget] = useState(2000);
+  const [meals, setMeals] = useState<MealEntry[]>([]);
 
-  const [meals, setMeals] = useState<MealEntry[]>(() => {
-    const saved = localStorage.getItem('meals');
-    return saved ? JSON.parse(saved).map((meal: any) => ({
-      ...meal,
-      timestamp: new Date(meal.timestamp)
-    })) : [];
-  });
-
+  // --- 1. INITIAL LOAD ---
   useEffect(() => {
-    localStorage.setItem('calorieTarget', calorieTarget.toString());
-  }, [calorieTarget]);
+    const initApp = async () => {
+      const storedUserId = localStorage.getItem('user_id');
+      const storedName = localStorage.getItem('username');
 
-  useEffect(() => {
-    localStorage.setItem('meals', JSON.stringify(meals));
-  }, [meals]);
+      if (storedUserId) {
+        setUserId(storedUserId);
+        if (storedName) setUserName(storedName);
+        
+        // Fetch Data in Parallel
+        await Promise.all([
+            fetchUserStats(storedUserId),
+            fetchMeals(storedUserId)
+        ]);
+        
+        setAppState("app");
+      } else {
+        setAppState("auth");
+      }
+      setLoading(false);
+    };
 
-  // Called when AuthPage successfully logs in via Google
+    initApp();
+  }, []);
+
+  // --- 2. FETCH FUNCTIONS ---
+  const fetchUserStats = async (id: string) => {
+    try {
+      const res = await fetch(`http://127.0.0.1:5000/api/user/${id}/stats/latest`);
+      if (res.ok) {
+        const data = await res.json();
+
+        if (data.calorie_target) setCalorieTarget(data.calorie_target); 
+      } else {
+
+        if (res.status === 404) setAppState("onboarding");
+      }
+    } catch (err) {
+      console.error("Failed to fetch stats", err);
+    }
+  };
+
+  const fetchMeals = async (id: string) => {
+    try {
+      const res = await fetch(`http://127.0.0.1:5000/api/user/${id}/meal-log`);
+      if (res.ok) {
+        const data = await res.json();
+        const formattedMeals = data.map((m: any) => ({
+            id: m.id || Math.random().toString(), 
+            foodName: m.meal_name,
+            calories: m.calories,
+            servings: 1, 
+            timestamp: new Date(m.date)
+        }));
+        setMeals(formattedMeals);
+      }
+    } catch (err) {
+      console.error("Failed to fetch meals", err);
+    }
+  };
+
+
   const handleAuth = (email: string) => {
-    setUserEmail(email);
-    // Refresh username from storage (set by AuthPage)
-    const storedName = localStorage.getItem('username');
-    if (storedName) setUserName(storedName);
-
-    // Check if they need onboarding
-    const completedOnboarding = localStorage.getItem('onboardingComplete');
-    setAppState(completedOnboarding ? 'app' : 'onboarding');
+    window.location.reload(); 
   };
 
   const handleOnboardingComplete = (data: OnboardingData) => {
     setUserName(data.name);
     setCalorieTarget(data.calorieTarget);
-    localStorage.setItem('username', data.name);
-    localStorage.setItem('onboardingComplete', 'true');
-    localStorage.setItem('onboardingData', JSON.stringify(data));
     setAppState('app');
+    
+    // Refresh page to ensure clean state
+    window.location.reload();
   };
 
   const handleLogout = () => {
-    if (confirm('Are you sure you want to log out?')) {
-      // Clear session data
-      localStorage.removeItem('user_id');
-      localStorage.removeItem('username');
-      localStorage.removeItem('userEmail');
+    if (confirm('Log out?')) {
+      localStorage.clear();
       setAppState('auth');
+      setUserId(null);
     }
   };
 
+  const handleAddMeal = async (meal: Omit<MealEntry, 'id' | 'timestamp'>) => {
+    const newMeal: MealEntry = {
+      ...meal,
+      id: Date.now().toString(),
+      timestamp: new Date(),
+    };
+    setMeals([...meals, newMeal]);
+
+    try {
+        const res = await fetch(`http://127.0.0.1:5000/api/user/${userId}/meal-log`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                food_name: meal.foodName,
+                calories: meal.calories,
+                protein: 0, // You can add these to MealEntry interface later
+                carbs: 0,
+                fats: 0
+            })
+        });
+        
+        if (res.ok) {
+            toast.success("Meal logged successfully!");
+        } else {
+            toast.error("Failed to save meal to server.");
+        }
+    } catch (err) {
+        console.error(err);
+        toast.error("Connection error.");
+    }
+  };
+
+  // In src/app/App.tsx
+
+const handleRemoveMeal = async (id: string | number) => {
+    // 1. Optimistic UI Update (Remove it immediately from screen)
+    const oldMeals = [...meals];
+    setMeals(meals.filter(meal => meal.id !== id));
+
+    // 2. Send Delete Request to Backend
+    if (userId) {
+        try {
+            const res = await fetch(`http://127.0.0.1:5000/api/user/${userId}/meal-log/${id}`, {
+                method: 'DELETE',
+            });
+
+            if (res.ok) {
+              toast.success("Meal deleted.");
+            } else {
+               // Revert if failed
+                toast.error("Could not delete meal.");
+                 setMeals(oldMeals);
+            }
+        } catch (e) {
+            console.error("Failed to delete meal", e);
+            toast.error("Connection error.");
+            setMeals(oldMeals);
+        }
+    }
+};
+
+  const handleAddFromDatabase = (food: EthiopianFood) => {
+    handleAddMeal({
+      foodName: food.name,
+      calories: food.calories,
+      servings: 1,
+      
+    });
+  };
+
+  // Calculations
   const calculateTodayCalories = () => {
     const today = new Date();
     return meals
@@ -96,49 +194,26 @@ export default function App() {
         const mealDate = new Date(meal.timestamp);
         return mealDate.toDateString() === today.toDateString();
       })
-      .reduce((total, meal) => total + (meal.calories * meal.servings), 0);
+      .reduce((total, meal) => total + (meal.calories * (meal.servings || 1)), 0);
   };
 
   const consumedCalories = calculateTodayCalories();
   const remainingCalories = calorieTarget - consumedCalories;
 
-  const handleAddMeal = (meal: Omit<MealEntry, 'id' | 'timestamp'>) => {
-    const newMeal: MealEntry = {
-      ...meal,
-      id: Date.now().toString(),
-      timestamp: new Date(),
-    };
-    setMeals([...meals, newMeal]);
-  };
-
-  const handleRemoveMeal = (id: string) => {
-    setMeals(meals.filter(meal => meal.id !== id));
-  };
-
-  const handleAddFromDatabase = (food: EthiopianFood | { name?: string; nameAmharic?: string; calories?: number }) => {
-    // Prefer a clear name: use 'name' if present, otherwise fall back to 'nameAmharic' or a default.
-    const foodName = (food as any).name ?? (food as any).nameAmharic ?? 'Food';
-    const calories = (food as any).calories ?? 0;
-
-    handleAddMeal({
-      foodName,
-      calories,
-      servings: 1,
-    });
-  };
-
-  // --- CONTENT RENDERER ---
+  // --- RENDER ---
   const renderContent = () => {
-    if (appState === "auth") {
-      return <AuthPage onAuth={handleAuth} />;
-    }
+    if (loading) return (
+        <div className="h-screen flex items-center justify-center bg-[#faf8f5]">
+            <Loader2 className="w-10 h-10 text-[#8b5a3c] animate-spin" />
+        </div>
+    );
 
-    if (appState === "onboarding") {
-      return <Onboarding onComplete={handleOnboardingComplete} />;
-    }
+    if (appState === "auth") return <AuthPage onAuth={handleAuth} />;
+    if (appState === "onboarding") return <Onboarding onComplete={handleOnboardingComplete} />;
 
     return (
       <div className="min-h-screen bg-[#faf8f5] relative">
+        <Toaster position="top-center" />
         {/* Background Pattern */}
         <div className="fixed inset-0 opacity-20 pointer-events-none">
           <TibebPattern className="w-full h-full text-[#8b5a3c]" variant="subtle" />
@@ -282,7 +357,6 @@ export default function App() {
     );
   };
 
-  // --- RETURN WRAPPED APP ---
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       {renderContent()}
