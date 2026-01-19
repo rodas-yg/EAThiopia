@@ -5,14 +5,15 @@ from datetime import datetime, timezone
 from validators import validate_biometrics, validate_meal_log, validate_email
 from calculations import calculate_bmi, daily_caloric_needs
 from services import fetch_nutritional_data, get_recipe_with_cache, format_recipe_with_servings, _link_ingredient_to_recipe
-from seed import seed_ingredients
+from services import verify_google_token
+from flask_cors import CORS
 app = Flask(__name__)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://rodasgeberhiwet:rodas1018@localhost:5432/eathiopia_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
-
+CORS(app)
 @app.route('/')
 def home():
     return "EAThiopia API is Running!"
@@ -21,52 +22,46 @@ def home():
 
 
 # Register or login user via Google authentication
-@app.route('/api/auth/register', methods=['POST'])
-def register():  # sourcery skip: use-named-expression
-    """Register a new user or return an existing user based on Google authentication data.
-    This endpoint validates the provided user information and creates a new user record if one does not already exist.
-
-    Args:
-        None: The request body must contain 'email', 'google_id', and 'name' fields in JSON format.
-
-    Returns:
-        Response: A JSON response indicating success or failure, including user details when appropriate.
-    """
+@app.route('/api/auth/google', methods=['POST'])
+def google_auth():
     data = request.get_json()
-    email = data.get('email')
-    google_id = data.get('google_id')
-    name = data.get('name')
+    token = data.get('token')
     
-    if not email or not google_id or not name:
-        return jsonify({"error": "Missing required fields"}), 400
+    if not token:
+        return jsonify({"error": "Missing token"}), 400
+
+    # 1. Verify with Google
+    user_info = verify_google_token(token)
     
-    user = User.query.filter_by(email=email).first()
-    if user:
-        print(f"Welcome back, {user.username}!")
-        return jsonify({
-            "message": "User already exists",
-            "user_id": user.id,
-            "username": user.username         
-                        }), 200
+    if not user_info:
+        return jsonify({"error": "Invalid Google Token"}), 401
+
+    # 2. Check/Create User in DB
+    email = user_info['email']
+    google_id = user_info['google_id']
+    name = user_info.get('name', 'User')
     
-    else:
-        print("Registering new user...")
-        try:
-            new_user = User(
-                username = name,
-                email = email,
-                google_id = google_id
-            )
-            db.session.add(new_user)
-            db.session.commit()
-            return jsonify({
-                        "message": "User registered successfully",
-                        "user_id": new_user.id,
-                        "username": new_user.username
-                    }), 201
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({"error": str(e)}), 500
+    user = User.query.filter_by(google_id=google_id).first()
+
+    if not user:
+        # Register new user
+        print(f"Creating new user: {email}")
+        user = User(
+            username=name,
+            email=email,
+            google_id=google_id
+        )
+        db.session.add(user)
+        db.session.commit()
+    
+    # 3. Return User ID to Frontend
+    return jsonify({
+        "message": "Login successful",
+        "user_id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "picture": user_info.get('picture')
+    }), 200
 
 # Get user by ID
 @app.route('/api/user/<user_id>', methods=['GET'])
@@ -357,9 +352,9 @@ def get_recipe(recipe_id):
     data = format_recipe_with_servings(recipe, servings)
     return jsonify(data), 200
 
-with app.app_context():
-    db.create_all()
+
 
 if __name__ == "__main__":
-    seed_ingredients()
+    with app.app_context():
+        db.create_all()
     app.run(debug=True)

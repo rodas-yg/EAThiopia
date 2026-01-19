@@ -6,6 +6,7 @@ import { Label } from "./ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Utensils, Mail, Lock, User, Coffee } from "lucide-react";
 import { EthiopianPattern } from "./EthiopianPattern";
+import { GoogleLogin } from '@react-oauth/google'; // Import Google Login
 
 interface AuthPageProps {
   onAuth: (email: string) => void;
@@ -17,6 +18,41 @@ export function AuthPage({ onAuth }: AuthPageProps) {
   const [signupName, setSignupName] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
+
+  // --- GOOGLE AUTH HANDLER ---
+  const handleGoogleSuccess = async (credentialResponse: any) => {
+    const token = credentialResponse.credential;
+
+    try {
+      // Connect to your Flask Backend
+      const response = await fetch('http://127.0.0.1:5000/api/auth/google', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token: token }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        console.log("✅ Google Login Success:", data);
+        
+        // Save user session
+        localStorage.setItem('user_id', data.user_id);
+        localStorage.setItem('username', data.username);
+        
+        // Trigger parent authentication flow
+        onAuth(data.email); 
+      } else {
+        console.error("❌ Backend Login Failed:", data.error);
+        alert("Login failed. Please try again.");
+      }
+    } catch (error) {
+      console.error("⚠️ Network Error:", error);
+      alert("Could not connect to the server. Is Flask running?");
+    }
+  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,6 +130,29 @@ export function AuthPage({ onAuth }: AuthPageProps) {
               </div>
             </div>
 
+            {/* --- GOOGLE LOGIN SECTION START --- */}
+            <div className="mb-6 flex flex-col items-center">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => console.log('Login Failed')}
+                theme="outline"
+                size="large"
+                width="100%"
+                text="continue_with"
+                shape="rectangular"
+              />
+            </div>
+
+            <div className="relative mb-6">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-[#8b5a3c]/20" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white px-2 text-[#786f66]">Or continue with email</span>
+              </div>
+            </div>
+            {/* --- GOOGLE LOGIN SECTION END --- */}
+
             <Tabs defaultValue="login" className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-8 bg-[#e8e1d8]">
                 <TabsTrigger 
@@ -161,10 +220,6 @@ export function AuthPage({ onAuth }: AuthPageProps) {
                     >
                       Sign In
                     </Button>
-
-                    <p className="text-center text-xs text-[#786f66]">
-                      Demo: Enter any credentials to continue
-                    </p>
                   </div>
                 </form>
               </TabsContent>
@@ -235,10 +290,6 @@ export function AuthPage({ onAuth }: AuthPageProps) {
                     >
                       Create Account
                     </Button>
-
-                    <p className="text-center text-xs text-[#786f66]">
-                      Demo: Enter any credentials to continue
-                    </p>
                   </div>
                 </form>
               </TabsContent>

@@ -2,9 +2,11 @@ import requests # pyright: ignore[reportMissingModuleSource]
 import json
 import os
 from models import Recipe, db, Ingredient, RecipeIngredient
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
 
-
+GOOGLE_CLIENT_ID = "191012445356-023kbidcgpfvrevfavcuvgp3nieaq3v5.apps.googleusercontent.com"
 
 def fetch_nutritional_data(food_item):
     api_key = "lD1b7btXh3huOlJ10dXicJ2iHMZcTqUvjYZ17HN7"
@@ -182,3 +184,27 @@ def format_recipe_with_servings(recipe, requested_servings):
         "total_calories": round(recipe.total_calories * ratio, 1),
         "ingredients": adjusted_ingredients
     }
+    
+
+def verify_google_token(token):
+    """
+    Verifies the JWT token from the frontend with Google's servers.
+    """
+    try:
+        # Verify the token against your specific Client ID
+        id_info = id_token.verify_oauth2_token(
+            token, 
+            google_requests.Request(), 
+            GOOGLE_CLIENT_ID
+        )
+
+        # Return the clean user info
+        return {
+            "google_id": id_info['sub'],
+            "email": id_info['email'],
+            "name": id_info.get('name'),
+            "picture": id_info.get('picture')
+        }
+    except ValueError as e:
+        print(f"Token verification failed: {e}")
+        return None
