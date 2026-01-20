@@ -19,3 +19,6 @@ scikit-learn
 
 authlib
 validators
+
+# AI and NLP
+google.generativeai

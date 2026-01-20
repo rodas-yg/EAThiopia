@@ -1,12 +1,14 @@
 import requests # pyright: ignore[reportMissingModuleSource]
 import json
 import os
+from dotenv import load_dotenv # pyright: ignore[reportMissingModuleSource]
 from models import Recipe, db, Ingredient, RecipeIngredient
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
-
-GOOGLE_CLIENT_ID = "191012445356-023kbidcgpfvrevfavcuvgp3nieaq3v5.apps.googleusercontent.com"
+google_client = load_dotenv().get("GOOGLE_CLIENT_ID")
+spoonacular_api_key = load_dotenv().get("SPOONACULAR_API_KEY")
+GOOGLE_CLIENT_ID = f"{google_client}.apps.googleusercontent.com"
 
 def fetch_nutritional_data(food_item):
     api_key = "lD1b7btXh3huOlJ10dXicJ2iHMZcTqUvjYZ17HN7"
@@ -115,11 +117,10 @@ def _fetch_from_spoonacular_api(spoonacular_id):
     """
     Calls the Spoonacular Information endpoint and standardizes the output.
     """
-    api_key = "rapi_ec4365ae628e6f98017e6b6fefd684b54d2330ba5041e0da"
 
     url = f"https://api.spoonacular.com/recipes/{spoonacular_id}/information"
     params = {
-        "apiKey": api_key,
+        "apiKey": spoonacular_api_key,
         "includeNutrition": "true"
     }
 
