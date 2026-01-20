@@ -205,3 +205,69 @@ def verify_google_token(token):
     except ValueError as e:
         print(f"Token verification failed: {e}")
         return None
+def search_recipes_spoonacular(query):
+    """
+    Search for full recipes (Images, Instructions, Nutrition) via Spoonacular.
+    """
+    url = "https://api.spoonacular.com/recipes/complexSearch"
+    params = {
+        "apiKey": "rapi_ec4365ae628e6f98017e6b6fefd684b54d2330ba5041e0da",
+        "query": query,
+        "number": 6, # Fetch 6 results
+        "addRecipeInformation": "true",
+        "addRecipeNutrition": "true",
+        "instructionsRequired": "true"
+    }
+    
+    try:
+        response = requests.get(url, params=params)
+        if response.status_code != 200:
+            return []
+            
+        data = response.json()
+        results = []
+        
+        for item in data.get('results', []):
+            # Extract Nutrition
+            cal = 0
+            pro = 0
+            fat = 0
+            carb = 0
+            
+            for n in item.get('nutrition', {}).get('nutrients', []):
+                if n['name'] == 'Calories': cal = n['amount']
+                if n['name'] == 'Protein': pro = n['amount']
+                if n['name'] == 'Fat': fat = n['amount']
+                if n['name'] == 'Carbohydrates': carb = n['amount']
+            
+            # Extract Ingredients
+            ingredients = [ing['original'] for ing in item.get('extendedIngredients', [])]
+            
+            # Extract Instructions
+            instructions = []
+            for instruction in item.get('analyzedInstructions', []):
+                for step in instruction.get('steps', []):
+                    instructions.append(step['step'])
+            
+            results.append({
+                "id": str(item['id']),
+                "name": item['title'],
+                "image": item['image'],
+                "calories": round(cal),
+                "protein": round(pro),
+                "fat": round(fat),
+                "carbs": round(carb),
+                "serving": f"{item.get('servings', 1)} serving",
+                "recipe": {
+                    "description": f"Ready in {item.get('readyInMinutes')} minutes.",
+                    "ingredients": ingredients,
+                    "instructions": instructions,
+                    "prepTime": f"{item.get('readyInMinutes')} min",
+                    "cookTime": "-"
+                }
+            })
+            
+        return results
+    except Exception as e:
+        print(f"Spoonacular Error: {e}")
+        return []

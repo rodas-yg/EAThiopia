@@ -7,6 +7,7 @@ from calculations import calculate_bmi, daily_caloric_needs
 from services import fetch_nutritional_data, get_recipe_with_cache, format_recipe_with_servings, _link_ingredient_to_recipe
 from services import verify_google_token
 from flask_cors import CORS
+from services import search_recipes_spoonacular
 from sqlalchemy import or_
 app = Flask(__name__)
 
@@ -350,6 +351,15 @@ def get_recipe(recipe_id):
     data = format_recipe_with_servings(recipe, servings)
     return jsonify(data), 200
 
+#search recipes
+@app.route('/api/recipes/search', methods=['GET'])
+def search_recipes():
+    query = request.args.get('query')
+    if not query: return jsonify([]), 200
+    
+    # Call the new service function
+    results = search_recipes_spoonacular(query)
+    return jsonify(results), 200
 #get user stats
 @app.route('/api/user/<int:user_id>/stats/latest', methods=['GET'])
 def get_user_stats(user_id):
