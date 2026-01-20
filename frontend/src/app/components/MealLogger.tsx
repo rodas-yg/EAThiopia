@@ -15,6 +15,9 @@ export interface MealEntry {
   calories: number;
   servings: number;
   timestamp: Date;
+  protein?: number;
+  carbs?: number;
+  fats?: number;
 }
 
 interface MealLoggerProps {

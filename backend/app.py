@@ -7,6 +7,7 @@ from calculations import calculate_bmi, daily_caloric_needs
 from services import fetch_nutritional_data, get_recipe_with_cache, format_recipe_with_servings, _link_ingredient_to_recipe
 from services import verify_google_token
 from flask_cors import CORS
+from sqlalchemy import or_
 app = Flask(__name__)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://rodasgeberhiwet:rodas1018@localhost:5432/eathiopia_db'
@@ -170,21 +171,24 @@ def update_user_stats(user_id):
 #*************************** Food log and tracking ***********************
 # #/
 
-#hybrid food search from either local database or USDA API
+
+# In backend/app.py
+
 @app.route('/api/food/search/<query>/<int:user_id>', methods=['GET'])
 def search_food(query, user_id):
     """Searches for food and automatically logs it to the user's history."""
     
+    # 1. Search Local Ingredients
     local_result = Ingredient.query.filter(Ingredient.name.ilike(f"%{query}%")).first()
     
     food_data = None
     if local_result:
         food_data = {
             "meal_name": local_result.name,
-            "protein": local_result.protein,
-            "fats": local_result.fats,
-            "carbs": local_result.carbs,
-            "calories": local_result.calories
+            "protein": local_result.protein_per_unit or 0,
+            "fats": local_result.fats_per_unit or 0,
+            "carbs": local_result.carbs_per_unit or 0,
+            "calories": local_result.calories_per_unit
         }
     else:
         usda_result, status_code = fetch_nutritional_data(query)
@@ -194,6 +198,7 @@ def search_food(query, user_id):
     if not food_data:
         return jsonify({"error": "Food not found"}), 404
 
+    # 3. Auto-Log the Meal
     try:
         new_log = MealLog(
             user_id=user_id,
@@ -211,7 +216,6 @@ def search_food(query, user_id):
         print(f"Logging failed: {e}")
 
     return jsonify(food_data), 200
-
 #adds searched meal to meal log
 @app.route('/api/user/<int:user_id>/meal-log', methods=['POST'])
 def log_meal(user_id):

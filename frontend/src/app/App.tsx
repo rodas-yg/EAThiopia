@@ -3,7 +3,6 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 import { CalorieTracker } from "./components/CalorieTracker";
 import { MealLogger, MealEntry } from "./components/MealLogger";
 import { EthiopianFoodDatabase, EthiopianFood } from "./components/EthiopianFoodDatabase";
-import { FoodDatabaseTabs } from "./components/FoodDatabaseTabs";
 import { TargetSetter } from "./components/TargetSetter";
 import { MealSuggestions } from "./components/MealSuggestions";
 import { Onboarding, OnboardingData } from "./components/Onboarding";
@@ -15,7 +14,6 @@ import { TibebPattern } from "./components/TibebPattern";
 import { motion } from "motion/react";
 import { Toaster, toast } from 'sonner';
 
-// ⚠️ YOUR CLIENT ID
 const GOOGLE_CLIENT_ID = "191012445356-023kbidcgpfvrevfavcuvgp3nieaq3v5.apps.googleusercontent.com";
 
 type AppState = "auth" | "onboarding" | "app";
@@ -25,14 +23,12 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>("auth");
   const [currentPage, setCurrentPage] = useState<Page>("home");
   const [loading, setLoading] = useState(true);
-
-  // User Data
   const [userId, setUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState("User");
   const [calorieTarget, setCalorieTarget] = useState(2000);
   const [meals, setMeals] = useState<MealEntry[]>([]);
 
-  // --- 1. INITIAL LOAD ---
+  // 1. INITIAL LOAD
   useEffect(() => {
     const initApp = async () => {
       const storedUserId = localStorage.getItem('user_id');
@@ -41,36 +37,26 @@ export default function App() {
       if (storedUserId) {
         setUserId(storedUserId);
         if (storedName) setUserName(storedName);
-        
-        // Fetch Data in Parallel
-        await Promise.all([
-            fetchUserStats(storedUserId),
-            fetchMeals(storedUserId)
-        ]);
-        
+        await Promise.all([fetchUserStats(storedUserId), fetchMeals(storedUserId)]);
         setAppState("app");
       } else {
         setAppState("auth");
       }
       setLoading(false);
     };
-
     initApp();
   }, []);
 
-  // --- 2. FETCH FUNCTIONS ---
   const fetchUserStats = async (id: string) => {
     try {
       const res = await fetch(`http://127.0.0.1:5000/api/user/${id}/stats/latest`);
       if (res.ok) {
         const data = await res.json();
         if (data.calorie_target) setCalorieTarget(data.calorie_target); 
-      } else {
-        if (res.status === 404) setAppState("onboarding");
+      } else if (res.status === 404) {
+        setAppState("onboarding");
       }
-    } catch (err) {
-      console.error("Failed to fetch stats", err);
-    }
+    } catch (err) { console.error(err); }
   };
 
   const fetchMeals = async (id: string) => {
@@ -78,53 +64,46 @@ export default function App() {
       const res = await fetch(`http://127.0.0.1:5000/api/user/${id}/meal-log`);
       if (res.ok) {
         const data = await res.json();
-        const formattedMeals = data.map((m: any) => ({
-            id: m.id, // Use the REAL ID from database
+        setMeals(data.map((m: any) => ({
+            id: m.id,
             foodName: m.meal_name,
             calories: m.calories,
-            servings: 1, // Default if not stored
-            timestamp: new Date(m.date)
-        }));
-        setMeals(formattedMeals);
+            servings: 1, 
+            timestamp: new Date(m.date),
+            protein: m.protein,
+            carbs: m.carbs,
+            fats: m.fats
+        })));
       }
-    } catch (err) {
-      console.error("Failed to fetch meals", err);
-    }
+    } catch (err) { console.error(err); }
   };
 
-
-  // --- 3. EVENT HANDLERS ---
-  const handleAuth = (email: string) => {
-    window.location.reload(); 
-  };
-
+  const handleAuth = () => window.location.reload();
   const handleOnboardingComplete = (data: OnboardingData) => {
     setUserName(data.name);
     setCalorieTarget(data.calorieTarget);
     setAppState('app');
     window.location.reload();
   };
-
   const handleLogout = () => {
     if (confirm('Log out?')) {
       localStorage.clear();
       setAppState('auth');
-      setUserId(null);
     }
   };
 
-  // --- ADD MEAL (With ID Swapping) ---
+  // 2. ADD MEAL FUNCTION
   const handleAddMeal = async (meal: Omit<MealEntry, 'id' | 'timestamp'>) => {
-    // 1. Generate a temp ID so React can render it immediately
     const tempId = "temp-" + Date.now();
-    
     const newMeal: MealEntry = {
       ...meal,
       id: tempId,
       timestamp: new Date(),
+      protein: meal.protein || 0,
+      carbs: meal.carbs || 0,
+      fats: meal.fats || 0
     };
     
-    // Add to UI immediately
     setMeals(prev => [...prev, newMeal]);
 
     try {
@@ -134,60 +113,54 @@ export default function App() {
             body: JSON.stringify({
                 food_name: meal.foodName,
                 calories: meal.calories,
-                amount: meal.servings, // <--- CRITICAL FIX: Send amount to prevent 5000 error
-                protein: 0, 
-                carbs: 0,
-                fats: 0
+                amount: meal.servings,
+                protein: meal.protein || 0, 
+                carbs: meal.carbs || 0,
+                fats: meal.fats || 0
             })
         });
         
         if (res.ok) {
             const data = await res.json();
-            toast.success("Meal logged successfully!");
-            
-            // 2. SWAP ID: Replace temp ID with the real Database ID
+            toast.success("Meal logged!");
             if (data.id) {
-                setMeals(prevMeals => prevMeals.map(m => 
-                    m.id === tempId ? { ...m, id: data.id } : m
-                ));
+                setMeals(prev => prev.map(m => m.id === tempId ? { ...m, id: data.id } : m));
             }
         } else {
-            toast.error("Failed to save meal to server.");
-            // Remove the meal if it failed
+            toast.error("Failed to save.");
             setMeals(prev => prev.filter(m => m.id !== tempId));
         }
     } catch (err) {
-        console.error(err);
         toast.error("Connection error.");
         setMeals(prev => prev.filter(m => m.id !== tempId));
     }
   };
 
-  // --- REMOVE MEAL ---
-  const handleRemoveMeal = async (id: string | number) => {
-    // 1. Optimistic UI Update (Remove it immediately from screen)
-    const oldMeals = [...meals];
-    setMeals(meals.filter(meal => meal.id !== id));
-
-    // 2. Send Delete Request to Backend
-    if (userId) {
-        try {
-            const res = await fetch(`http://127.0.0.1:5000/api/user/${userId}/meal-log/${id}`, {
-                method: 'DELETE',
-            });
-
-            if (res.ok) {
-              toast.success("Meal deleted.");
-            } else {
-               // Revert if failed
-                toast.error("Could not delete meal.");
-                 setMeals(oldMeals);
-            }
-        } catch (e) {
-            console.error("Failed to delete meal", e);
-            toast.error("Connection error.");
-            setMeals(oldMeals);
+  // 3. API SEARCH FUNCTION
+  const handleApiSearch = async (query: string) => {
+    if (!userId) return;
+    try {
+        const toastId = toast.loading(`Searching for "${query}"...`);
+        const res = await fetch(`http://127.0.0.1:5000/api/food/search/${query}/${userId}`);
+        
+        if (res.ok) {
+            const data = await res.json();
+            toast.dismiss(toastId);
+            toast.success(`Found: ${data.meal_name}`);
+            fetchMeals(userId);
+        } else {
+            toast.dismiss(toastId);
+            toast.error("Food not found in external database.");
         }
+    } catch (e) {
+        toast.error("Search failed.");
+    }
+  };
+
+  const handleRemoveMeal = async (id: string | number) => {
+    setMeals(meals.filter(meal => meal.id !== id));
+    if (userId) {
+        await fetch(`http://127.0.0.1:5000/api/user/${userId}/meal-log/${id}`, { method: 'DELETE' });
     }
   };
 
@@ -196,183 +169,85 @@ export default function App() {
       foodName: food.name,
       calories: food.calories,
       servings: 1,
+      protein: food.protein,
+      carbs: food.carbs,
+      fats: food.fat
     });
   };
 
-  // Calculations
-  const calculateTodayCalories = () => {
-    const today = new Date();
-    return meals
-      .filter(meal => {
-        const mealDate = new Date(meal.timestamp);
-        return mealDate.toDateString() === today.toDateString();
-      })
-      .reduce((total, meal) => total + (meal.calories * (meal.servings || 1)), 0);
-  };
+  const consumed = meals.reduce((acc, m) => {
+    return new Date(m.timestamp).toDateString() === new Date().toDateString() 
+      ? acc + (m.calories * m.servings) : acc;
+  }, 0);
 
-  const consumedCalories = calculateTodayCalories();
-  const remainingCalories = calorieTarget - consumedCalories;
-
-  // --- RENDER ---
+  // 4. RENDER
   const renderContent = () => {
-    if (loading) return (
-        <div className="h-screen flex items-center justify-center bg-[#faf8f5]">
-            <Loader2 className="w-10 h-10 text-[#8b5a3c] animate-spin" />
-        </div>
-    );
-
+    if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin w-10 h-10 text-[#8b5a3c]" /></div>;
     if (appState === "auth") return <AuthPage onAuth={handleAuth} />;
     if (appState === "onboarding") return <Onboarding onComplete={handleOnboardingComplete} />;
 
     return (
       <div className="min-h-screen bg-[#faf8f5] relative">
         <Toaster position="top-center" />
-        {/* Background Pattern */}
         <div className="fixed inset-0 opacity-20 pointer-events-none">
           <TibebPattern className="w-full h-full text-[#8b5a3c]" variant="subtle" />
         </div>
 
-        {/* Header */}
-        <div className="bg-white/80 backdrop-blur-sm border-b border-[#8b5a3c]/20 sticky top-0 z-50 relative overflow-hidden">
-          <div className="absolute bottom-0 left-0 right-0 h-1">
-            <TibebPattern className="w-full h-full text-[#8b5a3c]" variant="border" />
-          </div>
-          <div className="max-w-7xl mx-auto px-4 py-4 relative">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <motion.div
-                  whileHover={{ rotate: 5, scale: 1.05 }}
-                  transition={{ type: "spring", stiffness: 300 }}
-                  className="w-12 h-12 bg-gradient-to-br from-[#8b5a3c] to-[#c89968] rounded-2xl flex items-center justify-center shadow-lg"
-                >
-                  <Utensils className="w-6 h-6 text-white" />
-                </motion.div>
+        <div className="bg-white/80 backdrop-blur-sm border-b border-[#8b5a3c]/20 sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+             <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-[#8b5a3c] rounded-xl flex items-center justify-center text-white">
+                    <Utensils className="w-6 h-6" />
+                </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-[#2d2520]">
-                    EAThiopia
-                  </h1>
-                  <p className="text-xs text-[#786f66]">Welcome, {userName}</p>
+                    <h1 className="text-xl font-bold text-[#2d2520]">EAThiopia</h1>
+                    <p className="text-xs text-[#786f66]">Welcome, {userName}</p>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                {/* Navigation */}
-                <div className="flex gap-2 mr-3">
-                  <Button
-                    variant={currentPage === "home" ? "default" : "ghost"}
-                    size="sm"
+             </div>
+             
+             <div className="flex gap-2">
+                <Button 
+                    variant={currentPage === "home" ? "default" : "ghost"} 
                     onClick={() => setCurrentPage("home")}
-                    className={currentPage === "home" ? "bg-[#8b5a3c] hover:bg-[#6b4423]" : "hover:bg-[#8b5a3c]/10"}
-                  >
-                    <Home className="w-4 h-4 mr-2" />
-                    Home
-                  </Button>
-                  <Button
-                    variant={currentPage === "statistics" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setCurrentPage("statistics")}
-                    className={currentPage === "statistics" ? "bg-[#8b5a3c] hover:bg-[#6b4423]" : "hover:bg-[#8b5a3c]/10"}
-                  >
-                    <BarChart3 className="w-4 h-4 mr-2" />
-                    Statistics
-                  </Button>
-                </div>
-
-                <TargetSetter
-                  currentTarget={calorieTarget}
-                  onUpdateTarget={setCalorieTarget}
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleLogout}
-                  className="hover:bg-[#8b5a3c]/10"
+                    className={currentPage === "home" ? "bg-[#8b5a3c] hover:bg-[#6b4423]" : ""}
                 >
-                  <LogOut className="w-4 h-4" />
+                    <Home className="w-4 h-4 mr-2" /> Home
                 </Button>
-              </div>
-            </div>
+                <Button 
+                    variant={currentPage === "statistics" ? "default" : "ghost"} 
+                    onClick={() => setCurrentPage("statistics")}
+                    className={currentPage === "statistics" ? "bg-[#8b5a3c] hover:bg-[#6b4423]" : ""}
+                >
+                    <BarChart3 className="w-4 h-4 mr-2" /> Statistics
+                </Button>
+                <Button variant="ghost" onClick={handleLogout}><LogOut className="w-4 h-4" /></Button>
+             </div>
           </div>
         </div>
 
-        {/* Main Content */}
         <div className="max-w-7xl mx-auto px-4 py-8 relative z-10">
           {currentPage === "home" ? (
-            <motion.div
-              key="home"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left Column */}
-                <div className="lg:col-span-2 space-y-6">
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: 0.1 }}
-                  >
-                    <CalorieTracker
-                      consumed={consumedCalories}
-                      target={calorieTarget}
-                      remaining={remainingCalories}
-                    />
-                  </motion.div>
-
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: 0.2 }}
-                  >
-                    <MealLogger
-                      meals={meals}
-                      onAddMeal={handleAddMeal}
-                      onRemoveMeal={handleRemoveMeal}
-                    />
-                  </motion.div>
-
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: 0.3 }}
-                  >
-                    <MealSuggestions
-                      remainingCalories={remainingCalories}
-                      consumedCalories={consumedCalories}
-                      onAddSuggestion={handleAddFromDatabase}
-                    />
-                  </motion.div>
-                </div>
-
-                {/* Right Column */}
-                <motion.div
-                  className="lg:col-span-1"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.4, delay: 0.4 }}
-                >
-                  <FoodDatabaseTabs onAddFood={handleAddFromDatabase} />
-                </motion.div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-6">
+                <CalorieTracker consumed={consumed} target={calorieTarget} remaining={calorieTarget - consumed} />
+                <MealLogger meals={meals} onAddMeal={handleAddMeal} onRemoveMeal={handleRemoveMeal} />
+                <MealSuggestions remainingCalories={calorieTarget - consumed} consumedCalories={consumed} onAddSuggestion={handleAddFromDatabase} />
               </div>
-            </motion.div>
+              
+              <div className="lg:col-span-1 h-full min-h-[500px]">
+                 <EthiopianFoodDatabase 
+                    onAddFood={handleAddFromDatabase} 
+                    onApiSearch={handleApiSearch} 
+                 />
+              </div>
+            </div>
           ) : (
-            <motion.div
-              key="statistics"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Statistics meals={meals} calorieTarget={calorieTarget} />
-            </motion.div>
+            <Statistics meals={meals} calorieTarget={calorieTarget} />
           )}
         </div>
       </div>
     );
   };
 
-  return (
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      {renderContent()}
-    </GoogleOAuthProvider>
-  );
+  return <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>{renderContent()}</GoogleOAuthProvider>;
 }
