@@ -71,4 +71,3 @@ def is_height_valid(height, unit):
     elif unit == 'inches':
         return height > 0 and height < 100
     return False
-
