@@ -6,8 +6,7 @@ genai.configure(api_key=gemini_key)
 class AIService:
     def __init__(self):
         self.model = genai.GenerativeModel("gemini-1.5-flash")
-    
-    def advice(self, username, data: dict, question=None):
+    def advice(self, data: dict, question=None):
         """
         `data` should contain both userstats and history keys merged together.
         Expected keys (optional): age, gender, activity_level,
@@ -17,7 +16,7 @@ class AIService:
         age = data.get("age", "N/A")
         gender = data.get("gender", "N/A")
         activity_level = data.get("activity_level", "N/A")
-
+        username = data.get('username')
         target_calories = data.get("target_calories", "N/A")
         current_weight = data.get("current_weight", "N/A")
         target_weight = data.get("target_weight", "N/A")

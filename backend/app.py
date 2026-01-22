@@ -10,6 +10,7 @@ from flask_cors import CORS
 from services import search_recipes_spoonacular
 from sqlalchemy import or_
 from ai import AIService
+from analysis import PandasAnalysis
 app = Flask(__name__)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://rodasgeberhiwet:rodas1018@localhost:5432/eathiopia_db'
@@ -384,24 +385,22 @@ def get_user_stats(user_id):
     return jsonify({"error": "No stats found"}), 404
 
 # --- AI ROUTES ---
-ai_service = AIService()
+
+
 @app.route('/api/ai/advice', methods=['POST'])
 def get_advice():
     data = request.get_json()
     question = data.get('question')
-    userid = data.get('user_id')
-    user = User.query.get(userid)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-    
-    stats = UserStats.query.filter_by(user_id=userid).first()
-    meallog = MealLog.query.filter_by(user_id=userid).all()
-    if not meallog:
-        return jsonify({"error": "No enough meal to analyse"}), 404
-    if not stats:
-        return jsonify({"error": "User stats not found"}), 404
-    
-    return None
+    ai_service = AIService()
+
+    try:
+        analysis = PandasAnalysis(data.get('userid'))
+        analyzed_data = analysis.ai_input()
+        response = ai_service.advice(analyzed_data, question) if question else ai_service.advice(analyzed_data)
+
+    except Exception as e:
+        return jsonify({"error": "Couldn't load AI response"})
+    return response
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()

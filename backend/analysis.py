@@ -2,7 +2,7 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from models import MealLog, UserStats, db
+from models import MealLog, UserStats, db, User
 
 class PandasAnalysis:
     def __init__(self, user_id):
@@ -31,7 +31,6 @@ class PandasAnalysis:
         self.meals_df['date'] = pd.to_datetime(self.meals_df['date'])
         self.meals_df['date_only'] = self.meals_df['date'].dt.normalize()
         
-        return self.meals_df
 
     def fetch_user_stats(self):
         stats = UserStats.query.filter_by(user_id=self.user_id).all()
@@ -53,11 +52,10 @@ class PandasAnalysis:
         self.stats_df['date'] = pd.to_datetime(self.stats_df['date'])
         self.stats_df['date_only'] = self.stats_df['date'].dt.normalize()
         
-        return self.stats_df
     
     def join_dfs(self):
         if self.meals_df.empty:
-            return
+            return None
 
         daily_intake = self.meals_df.groupby('date_only')[['calories', 'protein', 'carbs', 'fats']].sum().reset_index()
         
@@ -75,6 +73,9 @@ class PandasAnalysis:
         """
         Returns the dictionary exactly as required by the AI Service.
         """
+        self.fetch_user_data()
+        self.fetch_user_stats()
+        self.join_dfs()
         latest_stats = {}
         if not self.stats_df.empty:
             latest_stats = self.stats_df.sort_values('date').iloc[-1].to_dict()
@@ -96,8 +97,9 @@ class PandasAnalysis:
                     round(today_df['carbs'].sum()),
                     round(today_df['fats'].sum())
                 ]
-                
+        user = User.query.filter_by(id=self.user_id).first()
         return {
+            "username": user.username,
             "age": latest_stats.get('age', "N/A"),
             "gender": latest_stats.get('gender', "N/A"),
             "activity_level": latest_stats.get('activity_level', "N/A"),
@@ -106,3 +108,4 @@ class PandasAnalysis:
             "meals": todays_meals,
             "macros": todays_macros
         }
+        

@@ -6,8 +6,8 @@ from models import Recipe, db, Ingredient, RecipeIngredient
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
-google_client = load_dotenv().get("GOOGLE_CLIENT_ID")
-spoonacular_api_key = load_dotenv().get("SPOONACULAR_API_KEY")
+google_client = load_dotenv("GOOGLE_CLIENT_ID")
+spoonacular_api_key = load_dotenv("SPOONACULAR_API_KEY")
 GOOGLE_CLIENT_ID = f"{google_client}.apps.googleusercontent.com"
 
 def fetch_nutritional_data(food_item):
