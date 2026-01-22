@@ -389,18 +389,36 @@ def get_user_stats(user_id):
 
 @app.route('/api/ai/advice', methods=['POST'])
 def get_advice():
-    data = request.get_json()
+
+    data = request.get_json(force=True) 
+    
+    user_id = data.get('userid')
     question = data.get('question')
+
+    if not user_id:
+        return jsonify({"error": "User ID is missing"}), 400
+
     ai_service = AIService()
 
     try:
-        analysis = PandasAnalysis(data.get('userid'))
+        analysis = PandasAnalysis(user_id)
         analyzed_data = analysis.ai_input()
-        response = ai_service.advice(analyzed_data, question) if question else ai_service.advice(analyzed_data)
+        
+
+        response = ai_service.advice(analyzed_data, question)
+
+        if response is None:
+            print("ERROR: AI Service returned None. Check API Key or Input Data.")
+            return jsonify({
+                "error": "AI generation failed.",
+                "details": "The AI service returned no data. Check server logs."
+            }), 500
+
+        return jsonify(response)
 
     except Exception as e:
-        return jsonify({"error": "Couldn't load AI response"})
-    return response
+        print(f"Server Error in get_advice: {e}")
+        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()

@@ -6,12 +6,12 @@ from models import Recipe, db, Ingredient, RecipeIngredient
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
-google_client = load_dotenv("GOOGLE_CLIENT_ID")
-spoonacular_api_key = load_dotenv("SPOONACULAR_API_KEY")
-GOOGLE_CLIENT_ID = f"{google_client}.apps.googleusercontent.com"
+load_dotenv() 
 
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+spoonacular_api_key = os.getenv("SPOONACULAR_API_KEY")
 def fetch_nutritional_data(food_item):
-    api_key = "lD1b7btXh3huOlJ10dXicJ2iHMZcTqUvjYZ17HN7"
     base_url = "https://api.nal.usda.gov/fdc/v1/foods/search"
     '''
     Fetch nutritional data for a given food item from USDA API.
@@ -49,7 +49,7 @@ def fetch_nutritional_data(food_item):
         return json.dumps({"error": str(e)}), 500
 
 def get_recipe_with_cache(recipe_id, source='local'):
-    api_key = "rapi_ec4365ae628e6f98017e6b6fefd684b54d2330ba5041e0da"
+    api_key = spoonacular_api_key
     base_url = "https://api.spoonacular.com/recipes/complexSearch"
     """
     Retrieves recipe. If it's a new Spoonacular ID, it saves it locally first.

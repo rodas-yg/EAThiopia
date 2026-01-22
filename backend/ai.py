@@ -1,76 +1,88 @@
 import google.generativeai as genai
 import os
 import json
+from dotenv import load_dotenv
+
+# 1. Force load .env so the key is definitely found
+load_dotenv()
 gemini_key = os.getenv("gemini_key")
-genai.configure(api_key=gemini_key)
+
+if not gemini_key:
+    print("CRITICAL ERROR: 'gemini_key' is missing from .env file!")
+else:
+    genai.configure(api_key=gemini_key)
+
 class AIService:
     def __init__(self):
-        self.model = genai.GenerativeModel("gemini-1.5-flash")
+        try:
+            self.model = genai.GenerativeModel("gemini-2.5-flash")
+        except Exception as e:
+            print(f"Error initializing Gemini: {e}")
+
     def advice(self, data: dict, question=None):
         """
-        `data` should contain both userstats and history keys merged together.
-        Expected keys (optional): age, gender, activity_level,
-                                  target_calories, current_weight, target_weight,
-                                  meals (list), macros (list of [protein, carbs, fats])
+        Generates advice. Returns a safe JSON dictionary even if it fails.
         """
+        # 1. Validate Input Data
+        if not data:
+            return {
+                "analysis": "Error: No data provided.",
+                "suggestion": "Please ensure you are logged in.",
+                "encouragement": "Try again later.",
+                "answer_to_question": None
+            }
+
+        username = data.get('username', 'User')
         age = data.get("age", "N/A")
         gender = data.get("gender", "N/A")
         activity_level = data.get("activity_level", "N/A")
-        username = data.get('username')
+        
         target_calories = data.get("target_calories", "N/A")
         current_weight = data.get("current_weight", "N/A")
         target_weight = data.get("target_weight", "N/A")
 
         meals = data.get("meals") or []
-        meals_str = ", ".join(meals) if meals else "N/A"
+        meals_str = ", ".join(meals) if meals else "No meals logged yet"
 
         macros = data.get("macros") or []
-        protein = f"{macros[0]}g" if len(macros) > 0 else "N/A"
-        carbs = f"{macros[1]}g" if len(macros) > 1 else "N/A"
-        fats = f"{macros[2]}g" if len(macros) > 2 else "N/A"
+        p = macros[0] if len(macros) > 0 else 0
+        c = macros[1] if len(macros) > 1 else 0
+        f = macros[2] if len(macros) > 2 else 0
+        user_context = f"User: {username} | Age: {age} | Gender: {gender} | Activity: {activity_level}"
+        history_context = f"Weight: {current_weight} -> Target: {target_weight} | Meals: {meals_str} | Macros: {p}g P, {c}g C, {f}g F"
 
-        user_context = f"""
-        User: {username}
-        Age: {age}
-        Gender: {gender}
-        Activity Level: {activity_level}
+        prompt = f"""
+        You are an expert nutritionist.
+        Profile: {user_context}
+        Today's Log: {history_context}
         """
 
-        history_context = f"""
-        Target Calories: {target_calories}
-        current weight:  {current_weight}
-        target weight:   {target_weight}
-        meals eaten: {meals_str}
-        macros: User has consumed {protein} protein, {carbs} carbs, {fats} fats.
-        """
-
-        prompt = """
-        You are a helpful and friendly nutrition assistant. Based on the user's context and history, provide personalized dietary advice.
-        Make sure to encourage healthy eating habits and provide actionable suggestions.
-        Here is the user's context:
-        """ + user_context + """
-        Here is the user's recent history:
-        """ + history_context + """
-        """
-        
         if question:
-            prompt += f" Also, answer their question: {question}"
-        prompt += """Task:
-        Analyze the user's nutrition data and provide personalized advice.
-        
-        Required JSON Output Format:
-        {{
-            "analysis": "A 1-sentence summary of their day so far (e.g., 'You are low on protein').",
-            "suggestion": "A specific food recommendation or habit change.",
-            "encouragement": "A short motivational message.",
-            "answer_to_question": "Answer to the user's specific question (if provided, otherwise null)."
-        }}
+            prompt += f"\nUser Question: {question}\nAnswer this specifically."
+
+        prompt += """
+        Task: Provide JSON output only.
+        Format:
+        {
+            "analysis": "1 sentence summary.",
+            "suggestion": "Specific recommendation.",
+            "encouragement": "Short motivation.",
+            "answer_to_question": "Answer string or null"
+        }
         """
+
         try:
             response = self.model.generate_content(
-                prompt=prompt,
-                generation_config={"response_mime_type": "application/json"})
+                prompt,
+                generation_config={"response_mime_type": "application/json"}
+            )
             return json.loads(response.text)
+
         except Exception as e:
-            print(f"Error generating advice: {e}")
-            return None
+            print(f"AI GENERATION ERROR: {e}")
+            return {
+                "analysis": "AI Service Unavailable.",
+                "suggestion": "We couldn't generate advice right now.",
+                "encouragement": "Keep tracking your meals!",
+                "answer_to_question": "Error connecting to AI."
+            }
