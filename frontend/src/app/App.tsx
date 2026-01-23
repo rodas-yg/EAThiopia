@@ -2,12 +2,21 @@ import { useState, useEffect } from "react";
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { CalorieTracker } from "./components/CalorieTracker";
 import { MealLogger, MealEntry } from "./components/MealLogger";
-import { EthiopianFoodDatabase, EthiopianFood } from "./components/EthiopianFoodDatabase";
+import { EthiopianFoodDatabase } from "./components/EthiopianFoodDatabase";
 import { TargetSetter } from "./components/TargetSetter";
 import { MealSuggestions } from "./components/MealSuggestions";
 import { Onboarding, OnboardingData } from "./components/Onboarding";
 import { AuthPage } from "./components/AuthPage";
 import { Statistics } from "./components/Statistics";
+
+type EthiopianFood = {
+  id?: string;
+  name: string;
+  calories: number;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+};
 import { Utensils, LogOut, BarChart3, Home, Loader2 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { TibebPattern } from "./components/TibebPattern";
@@ -231,7 +240,7 @@ export default function App() {
               <div className="lg:col-span-2 space-y-6">
                 <CalorieTracker consumed={consumed} target={calorieTarget} remaining={calorieTarget - consumed} />
                 <MealLogger meals={meals} onAddMeal={handleAddMeal} onRemoveMeal={handleRemoveMeal} />
-                <MealSuggestions remainingCalories={calorieTarget - consumed} consumedCalories={consumed} onAddSuggestion={handleAddFromDatabase} />
+                <MealSuggestions remainingCalories={calorieTarget - consumed} consumedCalories={consumed} onAddSuggestion={handleAddFromDatabase} userId={userId || ""} />
               </div>
               
               <div className="lg:col-span-1 h-full min-h-[500px]">
