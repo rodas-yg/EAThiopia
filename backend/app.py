@@ -392,7 +392,7 @@ def get_advice():
 
     data = request.get_json(force=True) 
     
-    user_id = data.get('userid')
+    user_id = data.get('userid') or data.get('user_id')
     question = data.get('question')
 
     if not user_id:
@@ -423,3 +423,4 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
     app.run(debug=True)
+
