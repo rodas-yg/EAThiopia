@@ -8,7 +8,7 @@ load_dotenv()
 gemini_key = os.getenv("gemini_key")
 
 if not gemini_key:
-    print("CRITICAL ERROR: 'gemini_key' is missing from .env file!")
+    print("ERROR: 'gemini_key' is missing from .env file!")
 else:
     genai.configure(api_key=gemini_key)
 
@@ -23,7 +23,6 @@ class AIService:
         """
         Generates advice. Returns a safe JSON dictionary even if it fails.
         """
-        # 1. Validate Input Data
         if not data:
             return {
                 "analysis": "Error: No data provided.",

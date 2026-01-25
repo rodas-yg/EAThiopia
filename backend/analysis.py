@@ -108,4 +108,5 @@ class PandasAnalysis:
             "meals": todays_meals,
             "macros": todays_macros
         }
-        
+
+

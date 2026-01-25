@@ -11,6 +11,7 @@ load_dotenv()
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 spoonacular_api_key = os.getenv("SPOONACULAR_API_KEY")
+usda_api_key = os.getenv("usda_api_key")
 def fetch_nutritional_data(food_item):
     base_url = "https://api.nal.usda.gov/fdc/v1/foods/search"
     '''
@@ -23,18 +24,22 @@ def fetch_nutritional_data(food_item):
     
     assert isinstance(food_item, str), "Food item must be a string"
     try:
-        url = f"{base_url}?query={food_item}&pageSize=1&api_key={api_key}"
+        url = f"{base_url}?query={food_item}&pageSize=1&api_key={usda_api_key}"
         response = requests.get(url)
+        
         if response.status_code == 200:
             data = response.json()
-            if not data['foods']:
+            if not data.get('foods'):
                 return json.dumps({"error": "Food item not found"}), 404
+                
             food_nutrients = data['foods'][0]['foodNutrients']
-            def get_nutrient(id_list: list):
+            
+            def get_nutrient(id_list):
                 for n in food_nutrients:
                     if n['nutrientId'] in id_list:
                         return n['value']
-                return None     
+                return 0
+
             meal_data = {
                 "meal_name": data['foods'][0]['description'],
                 "protein": get_nutrient([1003, 203]),
@@ -44,8 +49,10 @@ def fetch_nutritional_data(food_item):
             }
             return meal_data, 200
         else:
+            print(f"USDA API Error: {response.status_code}") 
             return json.dumps({"error": "Failed to fetch data from USDA API"}), response.status_code
     except Exception as e:
+        print(f"Exception in service: {e}") 
         return json.dumps({"error": str(e)}), 500
 
 def get_recipe_with_cache(recipe_id, source='local'):
@@ -189,14 +196,12 @@ def verify_google_token(token):
     Verifies the JWT token from the frontend with Google's servers.
     """
     try:
-        # Verify the token against your specific Client ID
         id_info = id_token.verify_oauth2_token(
             token, 
             google_requests.Request(), 
             GOOGLE_CLIENT_ID
         )
 
-        # Return the clean user info
         return {
             "google_id": id_info['sub'],
             "email": id_info['email'],
@@ -214,7 +219,7 @@ def search_recipes_spoonacular(query):
     params = {
         "apiKey": "rapi_ec4365ae628e6f98017e6b6fefd684b54d2330ba5041e0da",
         "query": query,
-        "number": 6, # Fetch 6 results
+        "number": 12, 
         "addRecipeInformation": "true",
         "addRecipeNutrition": "true",
         "instructionsRequired": "true"
@@ -229,7 +234,6 @@ def search_recipes_spoonacular(query):
         results = []
         
         for item in data.get('results', []):
-            # Extract Nutrition
             cal = 0
             pro = 0
             fat = 0
@@ -241,10 +245,8 @@ def search_recipes_spoonacular(query):
                 if n['name'] == 'Fat': fat = n['amount']
                 if n['name'] == 'Carbohydrates': carb = n['amount']
             
-            # Extract Ingredients
             ingredients = [ing['original'] for ing in item.get('extendedIngredients', [])]
             
-            # Extract Instructions
             instructions = []
             for instruction in item.get('analyzedInstructions', []):
                 for step in instruction.get('steps', []):
@@ -258,6 +260,8 @@ def search_recipes_spoonacular(query):
                 "protein": round(pro),
                 "fat": round(fat),
                 "carbs": round(carb),
+                'image':item['image'],
+                
                 "serving": f"{item.get('servings', 1)} serving",
                 "recipe": {
                     "description": f"Ready in {item.get('readyInMinutes')} minutes.",

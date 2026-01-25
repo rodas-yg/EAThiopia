@@ -3,24 +3,15 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 import { CalorieTracker } from "./components/CalorieTracker";
 import { MealLogger, MealEntry } from "./components/MealLogger";
 import { EthiopianFoodDatabase } from "./components/EthiopianFoodDatabase";
-import { TargetSetter } from "./components/TargetSetter";
 import { MealSuggestions } from "./components/MealSuggestions";
 import { Onboarding, OnboardingData } from "./components/Onboarding";
 import { AuthPage } from "./components/AuthPage";
 import { Statistics } from "./components/Statistics";
+import { FoodWithRecipe } from "./components/FoodDetailsModal"; 
 
-type EthiopianFood = {
-  id?: string;
-  name: string;
-  calories: number;
-  protein?: number;
-  carbs?: number;
-  fat?: number;
-};
 import { Utensils, LogOut, BarChart3, Home, Loader2 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { TibebPattern } from "./components/TibebPattern";
-import { motion } from "motion/react";
 import { Toaster, toast } from 'sonner';
 
 const GOOGLE_CLIENT_ID = "191012445356-023kbidcgpfvrevfavcuvgp3nieaq3v5.apps.googleusercontent.com";
@@ -37,36 +28,61 @@ export default function App() {
   const [calorieTarget, setCalorieTarget] = useState(2000);
   const [meals, setMeals] = useState<MealEntry[]>([]);
 
-  // 1. INITIAL LOAD
+  // --- STRICT LOGIN LOGIC ---
   useEffect(() => {
     const initApp = async () => {
       const storedUserId = localStorage.getItem('user_id');
-      const storedName = localStorage.getItem('username');
+      
+      // If no ID, go straight to login
+      if (!storedUserId || storedUserId === "undefined") {
+        console.log("No user ID found, redirecting to Auth.");
+        handleLogout(); 
+        setLoading(false);
+        return;
+      }
 
-      if (storedUserId) {
-        setUserId(storedUserId);
-        if (storedName) setUserName(storedName);
-        await Promise.all([fetchUserStats(storedUserId), fetchMeals(storedUserId)]);
-        setAppState("app");
-      } else {
+      setUserId(storedUserId);
+      const storedName = localStorage.getItem('username');
+      if (storedName) setUserName(storedName);
+      
+      // Verify User Exists in Backend
+      try {
+        const res = await fetch(`http://127.0.0.1:5000/api/user/${storedUserId}/stats/latest`);
+        
+        if (res.ok) {
+            // Success: User exists and has stats -> Go to Dashboard
+            const data = await res.json();
+            if (data.calorie_target) setCalorieTarget(data.calorie_target);
+            await fetchMeals(storedUserId);
+            setAppState("app");
+        } else if (res.status === 404) {
+            // 404 usually means "User found, but no stats".
+            // BUT since you dropped tables, it might mean "User doesn't exist at all".
+            // Let's check if the USER exists first.
+            const userRes = await fetch(`http://127.0.0.1:5000/api/user/${storedUserId}`);
+            
+            if (userRes.ok) {
+                // User exists, just needs onboarding
+                setAppState("onboarding");
+            } else {
+                // User ID is invalid (deleted from DB) -> FORCE LOGOUT
+                console.log("User ID invalid (deleted from DB). Logging out...");
+                localStorage.clear();
+                setAppState("auth");
+            }
+        } else {
+            // Server Error -> Force Logout to be safe
+            setAppState("auth");
+        }
+      } catch (err) {
+        console.error("Connection failed:", err);
         setAppState("auth");
       }
       setLoading(false);
     };
+
     initApp();
   }, []);
-
-  const fetchUserStats = async (id: string) => {
-    try {
-      const res = await fetch(`http://127.0.0.1:5000/api/user/${id}/stats/latest`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.calorie_target) setCalorieTarget(data.calorie_target); 
-      } else if (res.status === 404) {
-        setAppState("onboarding");
-      }
-    } catch (err) { console.error(err); }
-  };
 
   const fetchMeals = async (id: string) => {
     try {
@@ -88,70 +104,54 @@ export default function App() {
   };
 
   const handleAuth = () => window.location.reload();
+  
   const handleOnboardingComplete = (data: OnboardingData) => {
     setUserName(data.name);
     setCalorieTarget(data.calorieTarget);
     setAppState('app');
-    window.location.reload();
-  };
-  const handleLogout = () => {
-    if (confirm('Log out?')) {
-      localStorage.clear();
-      setAppState('auth');
-    }
   };
 
-  // 2. ADD MEAL FUNCTION
+  const handleLogout = () => {
+    localStorage.clear();
+    setUserId(null);
+    setAppState('auth');
+  };
+
   const handleAddMeal = async (meal: Omit<MealEntry, 'id' | 'timestamp'>) => {
     const tempId = "temp-" + Date.now();
-    const newMeal: MealEntry = {
-      ...meal,
-      id: tempId,
-      timestamp: new Date(),
-      protein: meal.protein || 0,
-      carbs: meal.carbs || 0,
-      fats: meal.fats || 0
-    };
-    
+    const newMeal: MealEntry = { ...meal, id: tempId, timestamp: new Date(), protein: meal.protein||0, carbs: meal.carbs||0, fats: meal.fats||0 };
     setMeals(prev => [...prev, newMeal]);
 
-    try {
-        const res = await fetch(`http://127.0.0.1:5000/api/user/${userId}/meal-log`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                food_name: meal.foodName,
-                calories: meal.calories,
-                amount: meal.servings,
-                protein: meal.protein || 0, 
-                carbs: meal.carbs || 0,
-                fats: meal.fats || 0
-            })
-        });
-        
-        if (res.ok) {
-            const data = await res.json();
-            toast.success("Meal logged!");
-            if (data.id) {
-                setMeals(prev => prev.map(m => m.id === tempId ? { ...m, id: data.id } : m));
+    if(userId) {
+        try {
+            const res = await fetch(`http://127.0.0.1:5000/api/user/${userId}/meal-log`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    food_name: meal.foodName, calories: meal.calories, amount: meal.servings,
+                    protein: meal.protein||0, carbs: meal.carbs||0, fats: meal.fats||0
+                })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                toast.success("Meal logged!");
+                if (data.id) setMeals(prev => prev.map(m => m.id === tempId ? { ...m, id: data.id } : m));
+            } else {
+                toast.error("Failed to save.");
+                setMeals(prev => prev.filter(m => m.id !== tempId));
             }
-        } else {
-            toast.error("Failed to save.");
+        } catch (err) {
+            toast.error("Connection error.");
             setMeals(prev => prev.filter(m => m.id !== tempId));
         }
-    } catch (err) {
-        toast.error("Connection error.");
-        setMeals(prev => prev.filter(m => m.id !== tempId));
     }
   };
 
-  // 3. API SEARCH FUNCTION
   const handleApiSearch = async (query: string) => {
     if (!userId) return;
     try {
         const toastId = toast.loading(`Searching for "${query}"...`);
         const res = await fetch(`http://127.0.0.1:5000/api/food/search/${query}/${userId}`);
-        
         if (res.ok) {
             const data = await res.json();
             toast.dismiss(toastId);
@@ -159,40 +159,30 @@ export default function App() {
             fetchMeals(userId);
         } else {
             toast.dismiss(toastId);
-            toast.error("Food not found in external database.");
+            toast.error("Not found.");
         }
-    } catch (e) {
-        toast.error("Search failed.");
-    }
+    } catch (e) { toast.error("Search failed."); }
   };
 
   const handleRemoveMeal = async (id: string | number) => {
     setMeals(meals.filter(meal => meal.id !== id));
-    if (userId) {
-        await fetch(`http://127.0.0.1:5000/api/user/${userId}/meal-log/${id}`, { method: 'DELETE' });
-    }
+    if (userId) await fetch(`http://127.0.0.1:5000/api/user/${userId}/meal-log/${id}`, { method: 'DELETE' });
   };
 
-  const handleAddFromDatabase = (food: EthiopianFood) => {
+  const handleAddFromDatabase = (food: FoodWithRecipe) => {
     handleAddMeal({
-      foodName: food.name,
-      calories: food.calories,
-      servings: 1,
-      protein: food.protein,
-      carbs: food.carbs,
-      fats: food.fat
+      foodName: food.name, calories: food.calories, servings: 1,
+      protein: food.protein, carbs: food.carbs, fats: food.fat
     });
   };
 
-  const consumed = meals.reduce((acc, m) => {
-    return new Date(m.timestamp).toDateString() === new Date().toDateString() 
-      ? acc + (m.calories * m.servings) : acc;
-  }, 0);
+  const consumed = meals.reduce((acc, m) => acc + (m.calories * m.servings), 0);
 
-  // 4. RENDER
   const renderContent = () => {
     if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin w-10 h-10 text-[#8b5a3c]" /></div>;
+    
     if (appState === "auth") return <AuthPage onAuth={handleAuth} />;
+    
     if (appState === "onboarding") return <Onboarding onComplete={handleOnboardingComplete} />;
 
     return (
@@ -229,7 +219,9 @@ export default function App() {
                 >
                     <BarChart3 className="w-4 h-4 mr-2" /> Statistics
                 </Button>
-                <Button variant="ghost" onClick={handleLogout}><LogOut className="w-4 h-4" /></Button>
+                <Button variant="ghost" onClick={() => {
+                    if(confirm("Log out?")) handleLogout();
+                }}><LogOut className="w-4 h-4" /></Button>
              </div>
           </div>
         </div>
@@ -240,7 +232,12 @@ export default function App() {
               <div className="lg:col-span-2 space-y-6">
                 <CalorieTracker consumed={consumed} target={calorieTarget} remaining={calorieTarget - consumed} />
                 <MealLogger meals={meals} onAddMeal={handleAddMeal} onRemoveMeal={handleRemoveMeal} />
-                <MealSuggestions remainingCalories={calorieTarget - consumed} consumedCalories={consumed} onAddSuggestion={handleAddFromDatabase} userId={userId || ""} />
+                <MealSuggestions 
+                    remainingCalories={calorieTarget - consumed} 
+                    consumedCalories={consumed} 
+                    onAddSuggestion={handleAddFromDatabase} 
+                    userId={userId || ""} 
+                />
               </div>
               
               <div className="lg:col-span-1 h-full min-h-[500px]">

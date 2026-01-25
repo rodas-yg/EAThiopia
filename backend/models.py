@@ -42,6 +42,7 @@ class UserStats(db.Model):
 
     gender = db.Column(db.String(20), nullable=False, default="Male") 
     
+    
     activity_level = db.Column(db.String(50), nullable=False)
     bmi = db.Column(db.Float, nullable=False)
     target_weight = db.Column(db.Float, nullable=False)
