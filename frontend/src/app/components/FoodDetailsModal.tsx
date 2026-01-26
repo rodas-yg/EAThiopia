@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Button } from "./ui/button";
-import { ScrollArea } from "./ui/scroll-area";
+// Removed ScrollArea to fix the scrolling bug
 import { Plus, Flame, Clock, Utensils } from "lucide-react";
 
 export interface FoodWithRecipe {
@@ -77,32 +77,36 @@ export function FoodDetailsModal({ food, isOpen, onClose, onAddFood }: ModalProp
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md max-h-[85vh] flex flex-col p-0 bg-[#faf8f5] border-[#8b5a3c]/20">
+      <DialogContent className="max-w-md max-h-[85vh] flex flex-col p-0 bg-[#faf8f5] border-[#8b5a3c]/20 rounded-xl overflow-hidden">
         
-        {/* IMAGE HEADER */}
-        {food.image ? (
-            <div className="relative h-48 w-full">
-                <img src={food.image} alt={food.name} className="w-full h-full object-cover rounded-t-lg" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                <div className="absolute bottom-4 left-4 text-white">
-                    <DialogTitle className="text-2xl font-bold">{food.name}</DialogTitle>
-                    <p className="opacity-90">{food.description || "Ethiopian Delicacy"}</p>
+        {/* IMAGE HEADER - Fixed at top */}
+        <div className="shrink-0">
+            {food.image ? (
+                <div className="relative h-48 w-full">
+                    <img src={food.image} alt={food.name} className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                    <div className="absolute bottom-4 left-4 text-white">
+                        <DialogTitle className="text-2xl font-bold">{food.name}</DialogTitle>
+                        <p className="opacity-90">{food.description || "Ethiopian Delicacy"}</p>
+                    </div>
                 </div>
-            </div>
-        ) : (
-            <DialogHeader className="p-6 pb-2">
-                <DialogTitle className="text-2xl font-bold text-[#2d2520]">{food.name}</DialogTitle>
-                <DialogDescription>{food.description}</DialogDescription>
-            </DialogHeader>
-        )}
+            ) : (
+                <DialogHeader className="p-6 pb-2 bg-[#faf8f5]">
+                    <DialogTitle className="text-2xl font-bold text-[#2d2520]">{food.name}</DialogTitle>
+                    <DialogDescription>{food.description}</DialogDescription>
+                </DialogHeader>
+            )}
+        </div>
 
-        <ScrollArea className="flex-1 p-6 pt-2">
+        {/* SCROLLABLE CONTENT BODY */}
+        {/* We use flex-1 and overflow-y-auto to ensure THIS part scrolls while header/footer stay put */}
+        <div className="flex-1 overflow-y-auto p-6 pt-2 scrollbar-thin scrollbar-thumb-gray-300">
           
           {/* MACROS CARD */}
           <div className="grid grid-cols-3 gap-2 mb-6 text-center">
-             <div className="bg-white p-3 rounded-xl border border-[#8b5a3c]/10 shadow-sm"><div className="text-xs text-[#786f66]">Protein</div><div className="font-bold">{food.protein}g</div></div>
-             <div className="bg-white p-3 rounded-xl border border-[#8b5a3c]/10 shadow-sm"><div className="text-xs text-[#786f66]">Carbs</div><div className="font-bold">{food.carbs}g</div></div>
-             <div className="bg-white p-3 rounded-xl border border-[#8b5a3c]/10 shadow-sm"><div className="text-xs text-[#786f66]">Fat</div><div className="font-bold">{food.fat}g</div></div>
+             <div className="bg-white p-3 rounded-xl border border-[#8b5a3c]/10 shadow-sm"><div className="text-xs text-[#786f66]">Protein</div><div className="font-bold">{Math.round(food.protein)}g</div></div>
+             <div className="bg-white p-3 rounded-xl border border-[#8b5a3c]/10 shadow-sm"><div className="text-xs text-[#786f66]">Carbs</div><div className="font-bold">{Math.round(food.carbs)}g</div></div>
+             <div className="bg-white p-3 rounded-xl border border-[#8b5a3c]/10 shadow-sm"><div className="text-xs text-[#786f66]">Fat</div><div className="font-bold">{Math.round(food.fat)}g</div></div>
           </div>
 
           {/* TIME BADGES */}
@@ -143,15 +147,15 @@ export function FoodDetailsModal({ food, isOpen, onClose, onAddFood }: ModalProp
                   Full recipe details not available for this item.
               </div>
           )}
+        </div>
 
-        </ScrollArea>
-
-        <div className="p-4 border-t border-[#8b5a3c]/10 bg-white">
+        {/* FOOTER - Fixed at bottom */}
+        <div className="shrink-0 p-4 border-t border-[#8b5a3c]/10 bg-white">
             <Button 
                 onClick={() => onAddFood(food)} 
-                className="w-full bg-[#8b5a3c] hover:bg-[#6b4423] text-lg h-12"
+                className="w-full bg-[#8b5a3c] hover:bg-[#6b4423] text-lg h-12 shadow-md transition-transform active:scale-[0.98]"
             >
-                <Plus className="mr-2 w-5 h-5" /> Add to Log ({food.calories} cal)
+                <Plus className="mr-2 w-5 h-5" /> Add to Log ({Math.round(food.calories)} cal)
             </Button>
         </div>
       </DialogContent>

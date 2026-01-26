@@ -16,7 +16,7 @@ from services import (
     verify_google_token, 
     search_recipes_spoonacular, 
     predict_goal_date, 
-    log_user_weight
+    log_user_weight,generate_ai_recipe
 )
 from ai import AIService
 from analysis import PandasAnalysis
@@ -189,10 +189,6 @@ def add_user_stats(user_id):
 
         height_m = height / 100
         bmi = round(weight / (height_m * height_m), 2)
-
-        # REMOVED INCORRECT LINE: user.calorie_goal = ... 
-
-        # Check if stats already exist
         existing_stats = UserStats.query.filter_by(user_id=uid).first()
 
         if existing_stats:
@@ -269,7 +265,6 @@ def search_food(query, user_id):
         if ing:
             meal_name, calories, protein, fats, carbs = ing.name, ing.calories_per_unit, ing.protein_per_unit, ing.fats_per_unit, ing.carbs_per_unit
             recipe = ing.recipe_json
-            # Generate recipe if the seeded item is missing one
             if not recipe:
                 recipe = generate_ai_recipe(meal_name)
                 ing.recipe_json = recipe
@@ -419,10 +414,6 @@ def search_recipes():
     results = search_recipes_spoonacular(query)
     return jsonify(results), 200
 
-# --- STATS READERS ---
-
-# In backend/app.py
-
 @app.route('/api/user/<int:user_id>/stats/latest', methods=['GET'])
 def get_user_stats(user_id):
     stats = UserStats.query.filter_by(user_id=user_id).order_by(UserStats.updated_at.desc()).first()
@@ -440,7 +431,8 @@ def get_user_stats(user_id):
             "updated_at": stats.updated_at
         }), 200
     
-    return jsonify({"error": "No stats found"}), 404@app.route('/api/user/<int:user_id>/weight', methods=['POST'])
+    return jsonify({"error": "No stats found"}), 404
+@app.route('/api/user/<int:user_id>/weight', methods=['POST'])
 def update_weight(user_id):
     data = request.json
     new_weight = data.get('weight')

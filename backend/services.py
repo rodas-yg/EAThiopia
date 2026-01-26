@@ -14,7 +14,7 @@ from datetime import timedelta, datetime
 load_dotenv() 
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-spoonacular_api_key =  "rapi_ec4365ae628e6f98017e6b6fefd684b54d2330ba5041e0da"
+spoonacular_api_key = os.getenv("SPOONACULAR_API_KEY") 
 usda_api_key = os.getenv("usda_api_key")
 GOOGLE_API_KEY = os.getenv("gemini_key")
 
@@ -25,7 +25,6 @@ if GOOGLE_API_KEY:
 def generate_ai_recipe(food_name):
     """
     Uses Gemini to generate a quick recipe.
-    Improved: Falls back to raw text if JSON fails.
     """
     if not GOOGLE_API_KEY:
         print("ERROR: GOOGLE_API_KEY is missing in .env")
@@ -33,7 +32,7 @@ def generate_ai_recipe(food_name):
         
     try:
         # Use 'gemini-1.5-flash' (Faster/Newer) or fallback to 'gemini-pro'
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         prompt = f"""
         Write a simple cooking recipe for {food_name}.
@@ -53,9 +52,6 @@ def generate_ai_recipe(food_name):
         except:
             pass # JSON failed? No problem, move to step 2.
 
-        # 2. Fallback: Return the raw text! 
-        # (The Frontend now knows how to handle plain text)
-        print(f"AI returned text format for {food_name} (this is good!)")
         return text_output
             
     except Exception as e:
@@ -76,7 +72,7 @@ def fetch_nutritional_data(food_item):
         if response.status_code == 200:
             data = response.json()
             if not data.get('foods'):
-                return json.dumps({"error": "Food item not found"}), 404
+                return {"meal_name": food_item, "calories": 0, "protein": 0, "fats": 0, "carbs": 0}, 404
                 
             food_nutrients = data['foods'][0]['foodNutrients']
             
@@ -112,10 +108,10 @@ def fetch_nutritional_data(food_item):
             return meal_data, 200
         else:
             print(f"USDA API Error: {response.status_code}") 
-            return json.dumps({"error": "Failed to fetch data from USDA API"}), response.status_code
+            return {"error": "Failed to fetch data from USDA API"}, response.status_code
     except Exception as e:
         print(f"Exception in service: {e}") 
-        return json.dumps({"error": str(e)}), 500
+        return {"error": str(e)}, 500
 
 def get_recipe_with_cache(recipe_id, source='local'):
     if source == 'spoonacular':
@@ -315,9 +311,6 @@ def search_recipes_spoonacular(query):
     except Exception as e:
         print(f"Spoonacular Error: {e}")
         return []
-    
-
-
 
 def recalculate_calorie_target(stats):
     """
@@ -335,11 +328,12 @@ def recalculate_calorie_target(stats):
         "active": 1.725
     }
     tdee = bmr * multipliers.get(stats.activity_level, 1.2)
-
-    if stats.goal_weight:
-        if stats.goal_weight < stats.weight:
+    
+    # Use 'target_weight' consistently
+    if stats.target_weight:
+        if stats.target_weight < stats.weight:
             target = tdee - 500  
-        elif stats.goal_weight > stats.weight:
+        elif stats.target_weight > stats.weight:
             target = tdee + 500  
         else:
             target = tdee 
@@ -352,14 +346,19 @@ def log_user_weight(user_id, new_weight):
     user = User.query.get(user_id)
     if not user: return None
 
-    new_log = WeightLog(user_id=user_id, weight=new_weight)
+    # Save to history
+    new_log = WeightLog(user_id=user_id, weight=new_weight, date=datetime.now())
     db.session.add(new_log)
 
+    # Update current stats
     stats = UserStats.query.filter_by(user_id=user_id).order_by(UserStats.updated_at.desc()).first()
+    new_target = None
+    
     if stats:
         stats.weight = new_weight
         new_target = recalculate_calorie_target(stats)
         stats.calorie_target = new_target
+        stats.updated_at = datetime.now()
     
     db.session.commit()
     return {"new_weight": new_weight, "new_target": new_target}
@@ -368,7 +367,8 @@ def predict_goal_date(user_id):
     logs = WeightLog.query.filter_by(user_id=user_id).order_by(WeightLog.date.asc()).all()
     stats = UserStats.query.filter_by(user_id=user_id).order_by(UserStats.updated_at.desc()).first()
     
-    if len(logs) < 2 or not stats or not stats.goal_weight:
+    # Fixed: Use 'target_weight' instead of 'goal_weight'
+    if len(logs) < 2 or not stats or not stats.target_weight:
         return {"status": "insufficient_data", "message": "Log weight for at least 2 days to see prediction."}
 
     data = {'days': [], 'weight': []}
@@ -388,7 +388,7 @@ def predict_goal_date(user_id):
     
     slope = model.coef_[0] 
     current_weight = stats.weight
-    goal = stats.goal_weight
+    goal = stats.target_weight # Fixed: Use 'target_weight'
 
     if slope == 0:
          return {"status": "stalled", "message": "Weight is stable."}
