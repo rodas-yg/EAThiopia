@@ -18,7 +18,7 @@ spoonacular_api_key = os.getenv("SPOONACULAR_API_KEY")
 usda_api_key = os.getenv("usda_api_key")
 GOOGLE_API_KEY = os.getenv("gemini_key")
 
-# --- CONFIGURE AI ---
+# CONFIGURE AI ---
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
 
@@ -31,7 +31,7 @@ def generate_ai_recipe(food_name):
         return "Please add GOOGLE_API_KEY to your .env file to see recipes."
         
     try:
-        # Use 'gemini-1.5-flash' (Faster/Newer) or fallback to 'gemini-pro'
+        #might change the model in the near future
         model = genai.GenerativeModel('gemini-2.5-flash')
         
         prompt = f"""
@@ -44,13 +44,12 @@ def generate_ai_recipe(food_name):
         response = model.generate_content(prompt)
         text_output = response.text
 
-        # 1. Try to extract JSON
         try:
             match = re.search(r'\{.*\}', text_output, re.DOTALL)
             if match:
                 return json.loads(match.group(0))
         except:
-            pass # JSON failed? No problem, move to step 2.
+            pass 
 
         return text_output
             
@@ -168,6 +167,17 @@ def _link_ingredient_to_recipe(recipe_id, api_ingredient_data):
     db.session.add(link)
 
 def _fetch_from_spoonacular_api(spoonacular_id):
+    """Retrieve detailed recipe information from the Spoonacular API.
+
+    This fetches instructions, nutrition, and ingredient data for a recipe so it can be cached and reused within the application.
+
+    Args:
+        spoonacular_id: The unique Spoonacular recipe identifier to look up.
+
+    Returns:
+        dict or None: A dictionary containing the recipe title, servings, instructions, calories, and ingredients, or None if the request fails.
+    """
+    
     url = f"https://api.spoonacular.com/recipes/{spoonacular_id}/information"
     params = {
         "apiKey": spoonacular_api_key,
@@ -212,6 +222,7 @@ def _fetch_from_spoonacular_api(spoonacular_id):
         return None
 
 def format_recipe_with_servings(recipe, requested_servings):
+    #couldn't get this to work :(
     ratio = float(requested_servings) / recipe.base_servings
 
     adjusted_ingredients = []
@@ -250,6 +261,16 @@ def verify_google_token(token):
         return None
 
 def search_recipes_spoonacular(query):
+    """Search for recipes from Spoonacular and format them for the application.
+
+    This looks up matching recipes by keyword, extracts basic nutrition and instructions, and returns a normalized list of recipe summaries.
+
+    Args:
+        query: The free-text search term describing the desired recipe or ingredients.
+
+    Returns:
+        list[dict]: A list of recipe dictionaries with identifiers, nutrition estimates, serving info, and structured recipe details.
+    """
     url = "https://api.spoonacular.com/recipes/complexSearch"
     params = {
         "apiKey": spoonacular_api_key, 
@@ -329,7 +350,6 @@ def recalculate_calorie_target(stats):
     }
     tdee = bmr * multipliers.get(stats.activity_level, 1.2)
     
-    # Use 'target_weight' consistently
     if stats.target_weight:
         if stats.target_weight < stats.weight:
             target = tdee - 500  
@@ -346,11 +366,9 @@ def log_user_weight(user_id, new_weight):
     user = User.query.get(user_id)
     if not user: return None
 
-    # Save to history
     new_log = WeightLog(user_id=user_id, weight=new_weight, date=datetime.now())
     db.session.add(new_log)
 
-    # Update current stats
     stats = UserStats.query.filter_by(user_id=user_id).order_by(UserStats.updated_at.desc()).first()
     new_target = None
     
@@ -363,11 +381,22 @@ def log_user_weight(user_id, new_weight):
     db.session.commit()
     return {"new_weight": new_weight, "new_target": new_target}
 
+#-----------COOLEST PART----->>>SK-LEARN--------------#
 def predict_goal_date(user_id):
+    """Estimate when a user will reach their target weight based on logged progress.
+
+    This analyzes recent weight entries with a linear trend to determine progress direction, detect stalls, and forecast a goal date when possible.
+
+    Args:
+        user_id: The identifier of the user whose weight history and goal should be evaluated.
+
+    Returns:
+        dict: A status dictionary describing whether data is sufficient, progress is stalled or going in the wrong direction, or a successful prediction with days needed, predicted date, and trend slope.
+    """
+
     logs = WeightLog.query.filter_by(user_id=user_id).order_by(WeightLog.date.asc()).all()
     stats = UserStats.query.filter_by(user_id=user_id).order_by(UserStats.updated_at.desc()).first()
     
-    # Fixed: Use 'target_weight' instead of 'goal_weight'
     if len(logs) < 2 or not stats or not stats.target_weight:
         return {"status": "insufficient_data", "message": "Log weight for at least 2 days to see prediction."}
 

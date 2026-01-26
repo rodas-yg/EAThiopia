@@ -58,19 +58,15 @@ def google_auth():
     google_id = user_info['google_id']
     name = user_info.get('name', 'User')
     
-    # 1. Try to find user by Google ID
     user = User.query.filter_by(google_id=google_id).first()
 
-    # 2. If not found, try to find by Email (Link existing account)
     if not user:
         user = User.query.filter_by(email=email).first()
         if user:
             user.google_id = google_id
             db.session.commit()
 
-    # 3. If still not found, check if Username is taken
     if not user:
-        # Check if "Rodas Geberhiwet" exists. If so, change name to "Rodas Geberhiwet1"
         base_username = name
         counter = 1
         while User.query.filter_by(username=name).first():
@@ -164,11 +160,9 @@ def add_user_stats(user_id):
         gender = data.get('gender', 'Male') 
         activity = data.get('activity_level', 'moderate')
         
-        # 1. Get or Calculate Calorie Target
         calorie_target = data.get('calorie_target') or data.get('target')
 
         if not calorie_target:
-             # Mifflin-St Jeor Equation
              bmr = (10 * weight) + (6.25 * height) - (5 * age)
              bmr += 5 if gender.lower() == 'male' else -161
              
@@ -240,7 +234,6 @@ def update_user_stats(user_id):
     new_stats = UserStats(
         user_id=user.id,
         weight=data.get('weight'),
-        # FIX: Use updated_at instead of date
         updated_at=datetime.utcnow() 
     )
 
@@ -257,7 +250,6 @@ def update_user_stats(user_id):
 @app.route('/api/food/search/<query>/<int:user_id>', methods=['GET'])
 def search_food(query, user_id):
     try:
-        # 1. Check local "Learned" Database
         ing = Ingredient.query.filter(Ingredient.name.ilike(f"%{query}%")).first()
         
         if ing:
@@ -268,19 +260,16 @@ def search_food(query, user_id):
                 ing.recipe_json = recipe
                 db.session.commit()
         else:
-            # 2. Fetch Fresh Data (USDA + AI Recipe)
             data, status = fetch_nutritional_data(query)
             if status != 200: return jsonify({"error": "Not found"}), 404
             
             meal_name, calories, protein, fats, carbs = data['meal_name'], data['calories'], data['protein'], data['fats'], data['carbs']
             recipe = data.get('recipe')
 
-            # Cache in DB
             new_ing = Ingredient(name=meal_name, calories_per_unit=calories, protein_per_unit=protein, fats_per_unit=fats, carbs_per_unit=carbs, recipe_json=recipe)
             db.session.add(new_ing)
             db.session.commit()
 
-        # 3. Log to Daily History
         new_log = MealLog(user_id=user_id, meal_name=meal_name, protein=protein, fats=fats, carbs=carbs, calories=calories, date=datetime.now(timezone.utc))
         db.session.add(new_log)
         db.session.commit()

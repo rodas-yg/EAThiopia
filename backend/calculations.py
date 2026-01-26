@@ -15,10 +15,10 @@ def calculate_bmi(weight,weight_unit, height, height_unit, height_inches=0):
         if weight_unit == 'lbs':
             weight = weight * 0.453592  
         if height_unit == 'cm':
-            height = height / 100  # to meters
+            height = height / 100  
         elif height_unit == 'inches':
             total_height_inches = height + height_inches
-            height = total_height_inches * 0.0254  #
+            height = total_height_inches * 0.0254  
         bmi = weight / (height ** 2)
         return round(bmi, 2)
     else:
@@ -31,7 +31,7 @@ def daily_caloric_needs(weight, weight_unit, height, height_unit, age, activity_
         if height_unit == 'cm':
             height = height / 100
         elif height_unit == 'inches':
-            height = height * 0.0254  # Convert inches to meters
+            height = height * 0.0254  
 
         bmr = 10 * weight + 6.25 * height - 5 * age + 5  # Mifflin-St Jeor for men
         if activity_level == 'sedentary':

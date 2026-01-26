@@ -50,8 +50,8 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
     // Goal Adjustment
     let target = tdee;
-    if (formData.goalWeight < formData.weight) target -= 500; // Lose weight
-    else if (formData.goalWeight > formData.weight) target += 500; // Gain weight
+    if (formData.goalWeight < formData.weight) target -= 500; 
+    else if (formData.goalWeight > formData.weight) target += 500; 
 
     return Math.round(target);
   };

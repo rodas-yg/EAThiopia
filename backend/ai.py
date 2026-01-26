@@ -3,7 +3,6 @@ import os
 import json
 from dotenv import load_dotenv
 
-# 1. Force load .env so the key is definitely found
 load_dotenv()
 gemini_key = os.getenv("gemini_key")
 
@@ -15,7 +14,6 @@ else:
 class AIService:
     def __init__(self):
         try:
-            # Use 'gemini-1.5-flash' (Current fastest/cheapest model)
             self.model = genai.GenerativeModel("gemini-2.5-flash")
         except Exception as e:
             print(f"Error initializing Gemini: {e}")

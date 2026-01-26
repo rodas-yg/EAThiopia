@@ -6,15 +6,11 @@ db = SQLAlchemy()
 class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
-    # UNIQUE=FALSE allows duplicates (or use the smart login fix I gave you earlier)
     username = db.Column(db.String(80), unique=False, nullable=False) 
     email = db.Column(db.String(120), unique=True, nullable=True)
     password = db.Column(db.String(200), nullable=True)
     google_id = db.Column(db.String(200), unique=True, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    # User does NOT have BMI here. 
-    # Relationships:
     stats = db.relationship('UserStats', backref='user', lazy=True)
     meal_logs = db.relationship('MealLog', backref='user', lazy=True)
 
@@ -28,7 +24,6 @@ class UserStats(db.Model):
     height = db.Column(db.Float, nullable=False)
     weight = db.Column(db.Float, nullable=False)
     
-    # BMI BELONGS HERE
     bmi = db.Column(db.Float, nullable=True)
     
     goal_weight = db.Column(db.Float, nullable=True)
@@ -47,7 +42,6 @@ class MealLog(db.Model):
     protein = db.Column(db.Float, default=0)
     carbs = db.Column(db.Float, default=0)
     fats = db.Column(db.Float, default=0)
-    # Add 'amount' if your frontend sends it, otherwise default to 1
     amount = db.Column(db.Float, default=1) 
     date = db.Column(db.DateTime, default=datetime.utcnow)
 
