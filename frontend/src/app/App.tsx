@@ -17,7 +17,7 @@ import { Label } from "./components/ui/label";
 import { TibebPattern } from "./components/TibebPattern";
 import { Toaster, toast } from 'sonner';
 
-const GOOGLE_CLIENT_ID = "191012445356-023kbidcgpfvrevfavcuvgp3nieaq3v5.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "905920031102-dh2ss3maqm4k4jt1fbjaobcej56c08eq.apps.googleusercontent.com";
 
 type AppState = "auth" | "onboarding" | "app";
 type Page = "home" | "statistics";
@@ -27,7 +27,6 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>("home");
   const [loading, setLoading] = useState(true);
   
-  // User Data
   const [userId, setUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState("User");
   const [userPicture, setUserPicture] = useState<string | null>(null);
@@ -35,11 +34,9 @@ export default function App() {
   const [calorieTarget, setCalorieTarget] = useState(2000);
   const [meals, setMeals] = useState<MealEntry[]>([]);
   
-  // Search & Modal State
   const [sidebarSearchResults, setSidebarSearchResults] = useState<FoodWithRecipe[]>([]);
   const [selectedFood, setSelectedFood] = useState<FoodWithRecipe | null>(null); 
 
-  // Weight Update Modal State
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [newWeight, setNewWeight] = useState("");
 

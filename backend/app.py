@@ -1,20 +1,22 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 from flask_login import LoginManager
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timezone
 from sqlalchemy import or_
+
 from models import db, User, MealLog, UserStats, Recipe, Ingredient, RecipeIngredient
 from validators import validate_biometrics
 from services import (
     fetch_nutritional_data, 
+    generate_ai_recipe,
     get_recipe_with_cache, 
     format_recipe_with_servings, 
     _link_ingredient_to_recipe,
     verify_google_token, 
     search_recipes_spoonacular, 
     predict_goal_date, 
-    log_user_weight,generate_ai_recipe
+    log_user_weight
 )
 from ai import AIService
 from analysis import PandasAnalysis
@@ -23,11 +25,18 @@ app = Flask(__name__)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://rodasgeberhiwet:rodas1018@localhost:5432/eathiopia_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = 'abc123'
+app.config['SECRET_KEY'] = 'super_secret_key_12345_change_me_in_production'
 
 db.init_app(app)
 
-CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -40,6 +49,7 @@ def load_user(user_id):
 def home():
     return "EAThiopia API is Running!"
 
+# --- AUTH ROUTES ---
 
 @app.route('/api/auth/google', methods=['POST'])
 def google_auth():
@@ -58,14 +68,17 @@ def google_auth():
     google_id = user_info['google_id']
     name = user_info.get('name', 'User')
     
+    # 1. Find by Google ID
     user = User.query.filter_by(google_id=google_id).first()
 
+    # 2. Find by Email
     if not user:
         user = User.query.filter_by(email=email).first()
         if user:
             user.google_id = google_id
             db.session.commit()
 
+    # 3. Create New User
     if not user:
         base_username = name
         counter = 1
@@ -73,12 +86,7 @@ def google_auth():
             name = f"{base_username}{counter}"
             counter += 1
 
-        print(f"Creating new user: {name}")
-        user = User(
-            username=name,
-            email=email,
-            google_id=google_id
-        )
+        user = User(username=name, email=email, google_id=google_id)
         db.session.add(user)
         db.session.commit()
     
@@ -89,6 +97,7 @@ def google_auth():
         "email": user.email,
         "picture": user_info.get('picture')
     }), 200
+
 @app.route('/api/auth/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -153,34 +162,29 @@ def add_user_stats(user_id):
             return jsonify({"error": "User not found"}), 404
         
         data = request.get_json()
-
         weight = float(data.get('weight') or 0)
         height = float(data.get('height') or 0)
+        
+        if weight == 0 or height == 0:
+            return jsonify({"error": "Weight and Height cannot be 0"}), 400
+
         age = int(data.get('age') or 0)
         gender = data.get('gender', 'Male') 
         activity = data.get('activity_level', 'moderate')
         
+        # Calculate Calorie Target
         calorie_target = data.get('calorie_target') or data.get('target')
-
         if not calorie_target:
              bmr = (10 * weight) + (6.25 * height) - (5 * age)
              bmr += 5 if gender.lower() == 'male' else -161
-             
-             activity_multipliers = {
-                 "sedentary": 1.2, "light": 1.375, "moderate": 1.55, "active": 1.725
-             }
+             activity_multipliers = {"sedentary": 1.2, "light": 1.375, "moderate": 1.55, "active": 1.725}
              multiplier = activity_multipliers.get(activity, 1.2)
              calorie_target = int(bmr * multiplier)
 
-        target_weight = data.get('target_weight')
-        if target_weight is None:
-            target_weight = weight
-            
-        if weight == 0 or height == 0:
-            return jsonify({"error": "Weight and Height cannot be 0"}), 400
-
+        target_weight = data.get('target_weight') or weight
         height_m = height / 100
         bmi = round(weight / (height_m * height_m), 2)
+
         existing_stats = UserStats.query.filter_by(user_id=uid).first()
 
         if existing_stats:
@@ -209,23 +213,16 @@ def add_user_stats(user_id):
             db.session.add(new_stats)
         
         db.session.commit()
-        
-        return jsonify({
-            "message": "Stats saved successfully", 
-            "bmi": bmi,
-            "calorie_goal": int(calorie_target)
-        }), 201
+        return jsonify({"message": "Stats saved", "bmi": bmi, "calorie_goal": int(calorie_target)}), 201
 
     except Exception as e:
         db.session.rollback()
-        print(f"CRITICAL DB ERROR: {e}")
         return jsonify({"error": f"Database error: {str(e)}"}), 500
     
 @app.route('/api/user/<int:user_id>/stats', methods=['PUT'])
 def update_user_stats(user_id):
     user = User.query.get_or_404(user_id)
     data = request.get_json()
-    
     try:
         validate_biometrics(data) 
     except ValueError as ve:
@@ -236,7 +233,6 @@ def update_user_stats(user_id):
         weight=data.get('weight'),
         updated_at=datetime.utcnow() 
     )
-
     try:
         db.session.add(new_stats)
         db.session.commit()
@@ -244,26 +240,32 @@ def update_user_stats(user_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
-    
+
 # --- FOOD LOGGING ---
 
 @app.route('/api/food/search/<query>/<int:user_id>', methods=['GET'])
 def search_food(query, user_id):
     try:
         ing = Ingredient.query.filter(Ingredient.name.ilike(f"%{query}%")).first()
-        
         if ing:
-            meal_name, calories, protein, fats, carbs = ing.name, ing.calories_per_unit, ing.protein_per_unit, ing.fats_per_unit, ing.carbs_per_unit
             recipe = ing.recipe_json
             if not recipe:
-                recipe = generate_ai_recipe(meal_name)
+                recipe = generate_ai_recipe(ing.name)
                 ing.recipe_json = recipe
                 db.session.commit()
+            
+            # Use variables so we can return them later
+            meal_name, calories, protein, fats, carbs = ing.name, ing.calories_per_unit, ing.protein_per_unit, ing.fats_per_unit, ing.carbs_per_unit
+
         else:
             data, status = fetch_nutritional_data(query)
             if status != 200: return jsonify({"error": "Not found"}), 404
             
-            meal_name, calories, protein, fats, carbs = data['meal_name'], data['calories'], data['protein'], data['fats'], data['carbs']
+            meal_name = data['meal_name']
+            calories = data['calories']
+            protein = data['protein']
+            fats = data['fats']
+            carbs = data['carbs']
             recipe = data.get('recipe')
 
             new_ing = Ingredient(name=meal_name, calories_per_unit=calories, protein_per_unit=protein, fats_per_unit=fats, carbs_per_unit=carbs, recipe_json=recipe)
@@ -284,13 +286,11 @@ def search_food(query, user_id):
     except Exception as e:
         print(f"Search Error: {e}")
         return jsonify({"error": "Internal server error"}), 500
+
 @app.route('/api/user/<int:user_id>/meal-log', methods=['POST'])
 def log_meal(user_id):
     data = request.get_json()
-    
-    if not data.get('food_name'):
-        return jsonify({"error": "Food name required"}), 400
-        
+    if not data.get('food_name'): return jsonify({"error": "Food name required"}), 400
     try:
         new_meal = MealLog(
             user_id=user_id,
@@ -303,12 +303,7 @@ def log_meal(user_id):
         )
         db.session.add(new_meal)
         db.session.commit()
-        
-        return jsonify({
-            "message": "Meal logged successfully", 
-            "id": new_meal.id 
-        }), 201
-
+        return jsonify({"message": "Meal logged", "id": new_meal.id}), 201
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -316,64 +311,38 @@ def log_meal(user_id):
 @app.route('/api/user/<int:user_id>/meal-log', methods=['GET'])
 def get_meal_log(user_id):
     meals = MealLog.query.filter_by(user_id=user_id).order_by(MealLog.date.desc()).all()
-    meal_list = [{
-        "id": meal.id,  
-        "meal_name": meal.meal_name,
-        "protein": meal.protein,
-        "fats": meal.fats,
-        "carbs": meal.carbs,
-        "calories": meal.calories,
-        "date": meal.date.strftime("%Y-%m-%d %H:%M:%S")
-    } for meal in meals]
-    return jsonify(meal_list), 200
+    return jsonify([{
+        "id": m.id, "meal_name": m.meal_name, "protein": m.protein,
+        "fats": m.fats, "carbs": m.carbs, "calories": m.calories,
+        "date": m.date.strftime("%Y-%m-%d %H:%M:%S")
+    } for m in meals]), 200
 
 @app.route('/api/user/<int:user_id>/meal-log/<int:meal_id>', methods=['DELETE'])
 def delete_meal_log_entry(user_id, meal_id):
     meal = MealLog.query.filter_by(id=meal_id, user_id=user_id).first()
-    if not meal:
-        return jsonify({"error": "Meal log entry not found"}), 404
-    try:
-        db.session.delete(meal)
-        db.session.commit()
-        return jsonify({"message": "Meal deleted"}), 200
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+    if not meal: return jsonify({"error": "Not found"}), 404
+    db.session.delete(meal)
+    db.session.commit()
+    return jsonify({"message": "Deleted"}), 200
 
 @app.route('/api/user/<int:user_id>/meal-log', methods=['DELETE'])
 def delete_all_meal_logs(user_id):
-    try:
-        MealLog.query.filter_by(user_id=user_id).delete()
-        db.session.commit()
-        return jsonify({"message": "All meal log entries deleted successfully"}), 200
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-    
+    MealLog.query.filter_by(user_id=user_id).delete()
+    db.session.commit()
+    return jsonify({"message": "All deleted"}), 200
+
 # --- RECIPES ---
 
 @app.route('/api/recipes', methods=['POST'])
 def create_recipe():
     data = request.get_json() 
-    food = data.get('food')
-    ingredients = data.get('ingredients') 
-    instructions = data.get('instructions')
-    
-    if Recipe.query.filter_by(food=food).first():
+    if Recipe.query.filter_by(food=data.get('food')).first():
         return jsonify({"error": "Recipe already exists"}), 400
-        
     try:
-        new_recipe = Recipe(
-            food=food,
-            instructions=instructions, 
-            base_servings=data.get('base_servings', 1)
-        )
+        new_recipe = Recipe(food=data.get('food'), instructions=data.get('instructions'), base_servings=data.get('base_servings', 1))
         db.session.add(new_recipe)
         db.session.flush() 
-
-        for ing_data in ingredients:
-            _link_ingredient_to_recipe(new_recipe.id, ing_data)
-
+        for ing in data.get('ingredients', []): _link_ingredient_to_recipe(new_recipe.id, ing)
         db.session.commit()
         return jsonify({"message": "Recipe created", "recipe_id": new_recipe.id}), 201
     except Exception as e:
@@ -382,91 +351,58 @@ def create_recipe():
 
 @app.route('/api/recipes/<int:recipe_id>', methods=['GET'])
 def get_recipe(recipe_id):
-    source = request.args.get('source', 'local')
-    servings = request.args.get('servings', type=int)
-    recipe = get_recipe_with_cache(recipe_id, source=source)
-    
-    if not recipe:
-        return jsonify({"error": "Recipe not found"}), 404
-    if not servings:
-        servings = recipe.base_servings
-    data = format_recipe_with_servings(recipe, servings)
+    recipe = get_recipe_with_cache(recipe_id, source=request.args.get('source', 'local'))
+    if not recipe: return jsonify({"error": "Recipe not found"}), 404
+    data = format_recipe_with_servings(recipe, request.args.get('servings', type=int) or recipe.base_servings)
     return jsonify(data), 200
 
 @app.route('/api/recipes/search', methods=['GET'])
 def search_recipes():
-    query = request.args.get('query')
-    if not query: return jsonify([]), 200
-    
-    results = search_recipes_spoonacular(query)
-    return jsonify(results), 200
+    return jsonify(search_recipes_spoonacular(request.args.get('query')) if request.args.get('query') else []), 200
+
+# --- STATS READERS ---
 
 @app.route('/api/user/<int:user_id>/stats/latest', methods=['GET'])
 def get_user_stats(user_id):
     stats = UserStats.query.filter_by(user_id=user_id).order_by(UserStats.updated_at.desc()).first()
-    
     if stats:
         return jsonify({
-            "weight": stats.weight,
-            "height": stats.height,
-            "age": stats.age,
-            "bmi": stats.bmi,
-            "activity_level": stats.activity_level,
-            "target": stats.calorie_target, 
-            "calorie_target": stats.calorie_target,
-            "target_weight": stats.target_weight,
-            "updated_at": stats.updated_at
+            "weight": stats.weight, "height": stats.height, "age": stats.age,
+            "bmi": stats.bmi, "activity_level": stats.activity_level,
+            "target": stats.calorie_target, "calorie_target": stats.calorie_target,
+            "target_weight": stats.target_weight, "updated_at": stats.updated_at
         }), 200
-    
     return jsonify({"error": "No stats found"}), 404
+
+# --- FIX: SEPARATED THE MERGED LINES HERE ---
 @app.route('/api/user/<int:user_id>/weight', methods=['POST'])
 def update_weight(user_id):
     data = request.json
-    new_weight = data.get('weight')
-    
-    result = log_user_weight(user_id, new_weight)
-    if result:
-        return jsonify(result), 200
+    result = log_user_weight(user_id, data.get('weight'))
+    if result: return jsonify(result), 200
     return jsonify({"error": "User not found"}), 404
 
 @app.route('/api/user/<int:user_id>/prediction', methods=['GET'])
 def get_prediction(user_id):
-    result = predict_goal_date(user_id)
-    return jsonify(result), 200
+    return jsonify(predict_goal_date(user_id)), 200
 
 # --- AI ROUTES ---
 
 @app.route('/api/ai/advice', methods=['POST'])
 def get_advice():
     data = request.get_json(force=True) 
-    
     user_id = data.get('userid') or data.get('user_id')
-    question = data.get('question')
-
-    if not user_id:
-        return jsonify({"error": "User ID is missing"}), 400
-
-    ai_service = AIService()
-
+    if not user_id: return jsonify({"error": "User ID is missing"}), 400
     try:
         analysis = PandasAnalysis(user_id)
-        analyzed_data = analysis.ai_input()
-        
-        response = ai_service.advice(analyzed_data, question)
-
-        if response is None:
-            return jsonify({
-                "error": "AI generation failed.",
-                "details": "The AI service returned no data."
-            }), 500
-
+        response = AIService().advice(analysis.ai_input(), data.get('question'))
         return jsonify(response)
-
     except Exception as e:
-        print(f"Server Error in get_advice: {e}")
-        return jsonify({"error": f"Internal Server Error: {str(e)}"}), 500
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
     app.run(debug=True)
+
+#COOL STUFF

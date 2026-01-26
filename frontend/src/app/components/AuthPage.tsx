@@ -9,7 +9,7 @@ import { jwtDecode } from "jwt-decode";
 import { toast } from "sonner";
 import { TibebPattern } from "./TibebPattern"; 
 
-const API_URL = "http://127.0.0.1:5000";
+const API_URL = "";
 
 export function AuthPage({ onAuth }: { onAuth: () => void }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -69,7 +69,7 @@ export function AuthPage({ onAuth }: { onAuth: () => void }) {
   return (
     <div className="min-h-screen relative flex items-center justify-center bg-[#faf8f5] p-4">
       <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
-        <TibebPattern className="w-full h-full text-[#8b5a3c]" variant="full" />
+        <TibebPattern className="w-full h-full text-[#8b5a3c]" variant="default" />
       </div>
 
       <Card className="w-full max-w-md z-10 shadow-xl border-[#8b5a3c]/20 bg-white/95 backdrop-blur">
