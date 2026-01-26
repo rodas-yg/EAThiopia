@@ -4,14 +4,17 @@ import os
 import re
 import google.generativeai as genai
 from dotenv import load_dotenv 
-from models import Recipe, db, Ingredient, RecipeIngredient
+from models import Recipe, db, Ingredient, RecipeIngredient, WeightLog, User, UserStats
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
-
+from sklearn.linear_model import LinearRegression
+import numpy as np
+import pandas as pd
+from datetime import timedelta, datetime
 load_dotenv() 
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-spoonacular_api_key = os.getenv("SPOONACULAR_API_KEY") 
+spoonacular_api_key =  "rapi_ec4365ae628e6f98017e6b6fefd684b54d2330ba5041e0da"
 usda_api_key = os.getenv("usda_api_key")
 GOOGLE_API_KEY = os.getenv("gemini_key")
 
@@ -30,7 +33,7 @@ def generate_ai_recipe(food_name):
         
     try:
         # Use 'gemini-1.5-flash' (Faster/Newer) or fallback to 'gemini-pro'
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         prompt = f"""
         Write a simple cooking recipe for {food_name}.
@@ -85,7 +88,6 @@ def fetch_nutritional_data(food_item):
 
             meal_name = data['foods'][0]['description']
 
-            # 1. Get Base Numbers
             meal_data = {
                 "meal_name": meal_name,
                 "protein": get_nutrient([1003, 203]),
@@ -95,19 +97,16 @@ def fetch_nutritional_data(food_item):
                 "image": None, 
             }
 
-            # 2. ADD AI RECIPE
             print(f"Fetching recipe for: {meal_name}...") 
             ai_recipe = generate_ai_recipe(meal_name)
             
             if isinstance(ai_recipe, dict):
-                # We got perfect JSON
                 meal_data["recipe"] = ai_recipe
                 meal_data["ingredients"] = ai_recipe.get("ingredients", [])
                 meal_data["description"] = ai_recipe.get("description", "USDA Food Item")
             else:
-                # We got raw text (Fallback)
                 meal_data["recipe"] = ai_recipe 
-                meal_data["ingredients"] = [] # Frontend will just show the text instructions
+                meal_data["ingredients"] = [] 
                 meal_data["description"] = "USDA Food Item"
 
             return meal_data, 200
@@ -118,7 +117,6 @@ def fetch_nutritional_data(food_item):
         print(f"Exception in service: {e}") 
         return json.dumps({"error": str(e)}), 500
 
-# ... (Keep the rest of your file below: get_recipe_with_cache, etc.) ...
 def get_recipe_with_cache(recipe_id, source='local'):
     if source == 'spoonacular':
         cached = Recipe.query.filter_by(spoonacular_id=recipe_id).first()
@@ -317,3 +315,95 @@ def search_recipes_spoonacular(query):
     except Exception as e:
         print(f"Spoonacular Error: {e}")
         return []
+    
+
+
+
+def recalculate_calorie_target(stats):
+    """
+    Mifflin-St Jeor Equation + Goal Adjustment
+    """
+    if stats.gender == 'male':
+        bmr = (10 * stats.weight) + (6.25 * stats.height) - (5 * stats.age) + 5
+    else:
+        bmr = (10 * stats.weight) + (6.25 * stats.height) - (5 * stats.age) - 161
+
+    multipliers = {
+        "sedentary": 1.2,
+        "light": 1.375,
+        "moderate": 1.55,
+        "active": 1.725
+    }
+    tdee = bmr * multipliers.get(stats.activity_level, 1.2)
+
+    if stats.goal_weight:
+        if stats.goal_weight < stats.weight:
+            target = tdee - 500  
+        elif stats.goal_weight > stats.weight:
+            target = tdee + 500  
+        else:
+            target = tdee 
+    else:
+        target = tdee
+
+    return int(target)
+
+def log_user_weight(user_id, new_weight):
+    user = User.query.get(user_id)
+    if not user: return None
+
+    new_log = WeightLog(user_id=user_id, weight=new_weight)
+    db.session.add(new_log)
+
+    stats = UserStats.query.filter_by(user_id=user_id).order_by(UserStats.updated_at.desc()).first()
+    if stats:
+        stats.weight = new_weight
+        new_target = recalculate_calorie_target(stats)
+        stats.calorie_target = new_target
+    
+    db.session.commit()
+    return {"new_weight": new_weight, "new_target": new_target}
+
+def predict_goal_date(user_id):
+    logs = WeightLog.query.filter_by(user_id=user_id).order_by(WeightLog.date.asc()).all()
+    stats = UserStats.query.filter_by(user_id=user_id).order_by(UserStats.updated_at.desc()).first()
+    
+    if len(logs) < 2 or not stats or not stats.goal_weight:
+        return {"status": "insufficient_data", "message": "Log weight for at least 2 days to see prediction."}
+
+    data = {'days': [], 'weight': []}
+    start_date = logs[0].date
+    
+    for log in logs:
+        days_passed = (log.date - start_date).days
+        data['days'].append(days_passed)
+        data['weight'].append(log.weight)
+
+    df = pd.DataFrame(data)
+    X = df[['days']]
+    y = df['weight']
+
+    model = LinearRegression()
+    model.fit(X, y)
+    
+    slope = model.coef_[0] 
+    current_weight = stats.weight
+    goal = stats.goal_weight
+
+    if slope == 0:
+         return {"status": "stalled", "message": "Weight is stable."}
+    
+    if (goal < current_weight and slope > 0) or (goal > current_weight and slope < 0):
+         return {"status": "wrong_direction", "message": "Moving away from goal."}
+
+    days_needed = (goal - current_weight) / slope
+    days_needed = abs(days_needed)
+    
+    predicted_date = datetime.now() + timedelta(days=days_needed)
+    
+    return {
+        "status": "success",
+        "days_needed": int(days_needed),
+        "predicted_date": predicted_date.strftime("%B %d, %Y"),
+        "slope": round(slope, 2)
+    }

@@ -1,17 +1,25 @@
 from flask import Flask, request, jsonify
-from models import db, User, MealLog, UserStats, Recipe, Ingredient, RecipeIngredient
-from flask_login import login_required, current_user, LoginManager
-from datetime import datetime, timezone
-from validators import validate_biometrics, validate_meal_log, validate_email
-from calculations import calculate_bmi, daily_caloric_needs
-from services import fetch_nutritional_data, get_recipe_with_cache, format_recipe_with_servings, _link_ingredient_to_recipe
-from services import verify_google_token
 from flask_cors import CORS
-from services import search_recipes_spoonacular
+from flask_login import LoginManager
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime, timezone
 from sqlalchemy import or_
+
+# --- INTERNAL IMPORTS ---
+from models import db, User, MealLog, UserStats, Recipe, Ingredient, RecipeIngredient
+from validators import validate_biometrics
+from services import (
+    fetch_nutritional_data, 
+    get_recipe_with_cache, 
+    format_recipe_with_servings, 
+    _link_ingredient_to_recipe,
+    verify_google_token, 
+    search_recipes_spoonacular, 
+    predict_goal_date, 
+    log_user_weight
+)
 from ai import AIService
 from analysis import PandasAnalysis
-from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 
@@ -20,9 +28,9 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'super_secret_key_12345_change_me_in_production'
 
 db.init_app(app)
-CORS(app)
 
-# Initialize LoginManager (Still needed for some internal logic, but we won't force it on API routes)
+CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}}, supports_credentials=True)
+
 login_manager = LoginManager()
 login_manager.init_app(app)
 
@@ -34,9 +42,7 @@ def load_user(user_id):
 def home():
     return "EAThiopia API is Running!"
 
-# /************** Authentication Routes ***************
 
-# 1. GOOGLE LOGIN
 @app.route('/api/auth/google', methods=['POST'])
 def google_auth():
     data = request.get_json()
@@ -54,10 +60,26 @@ def google_auth():
     google_id = user_info['google_id']
     name = user_info.get('name', 'User')
     
+    # 1. Try to find user by Google ID
     user = User.query.filter_by(google_id=google_id).first()
 
+    # 2. If not found, try to find by Email (Link existing account)
     if not user:
-        print(f"Creating new user: {email}")
+        user = User.query.filter_by(email=email).first()
+        if user:
+            user.google_id = google_id
+            db.session.commit()
+
+    # 3. If still not found, check if Username is taken
+    if not user:
+        # Check if "Rodas Geberhiwet" exists. If so, change name to "Rodas Geberhiwet1"
+        base_username = name
+        counter = 1
+        while User.query.filter_by(username=name).first():
+            name = f"{base_username}{counter}"
+            counter += 1
+
+        print(f"Creating new user: {name}")
         user = User(
             username=name,
             email=email,
@@ -73,8 +95,6 @@ def google_auth():
         "email": user.email,
         "picture": user_info.get('picture')
     }), 200
-
-# 2. MANUAL REGISTER
 @app.route('/api/auth/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -99,7 +119,6 @@ def register():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-# 3. MANUAL LOGIN
 @app.route('/api/auth/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -118,7 +137,6 @@ def login():
     return jsonify({"error": "Invalid credentials"}), 401
 
 
-# Get user by ID
 @app.route('/api/user/<user_id>', methods=['GET'])
 def get_user_by_id(user_id):
     user = User.query.get(user_id)
@@ -130,10 +148,9 @@ def get_user_by_id(user_id):
         }), 200
     return jsonify({"error": "User not found"}), 404
 
-# Update user profile
+# --- USER STATS ---
 
 @app.route('/api/user/<user_id>/stats', methods=['POST'])
-@app.route('/api/user/<user_id>/stats/', methods=['POST'])
 def add_user_stats(user_id):
     try:
         uid = int(user_id)
@@ -148,28 +165,37 @@ def add_user_stats(user_id):
         age = int(data.get('age') or 0)
         gender = data.get('gender', 'Male') 
         activity = data.get('activity_level', 'moderate')
-        calorie_target = data.get('target')
+        
+        # 1. Get or Calculate Calorie Target
+        calorie_target = data.get('calorie_target') or data.get('target')
+
+        if not calorie_target:
+             # Mifflin-St Jeor Equation
+             bmr = (10 * weight) + (6.25 * height) - (5 * age)
+             bmr += 5 if gender.lower() == 'male' else -161
+             
+             activity_multipliers = {
+                 "sedentary": 1.2, "light": 1.375, "moderate": 1.55, "active": 1.725
+             }
+             multiplier = activity_multipliers.get(activity, 1.2)
+             calorie_target = int(bmr * multiplier)
 
         target_weight = data.get('target_weight')
         if target_weight is None:
             target_weight = weight
+            
         if weight == 0 or height == 0:
             return jsonify({"error": "Weight and Height cannot be 0"}), 400
 
         height_m = height / 100
         bmi = round(weight / (height_m * height_m), 2)
 
-        # 4. Save Calorie Goal to User Table
-        if calorie_target:
-            user.calorie_goal = int(calorie_target)
-            db.session.add(user)
+        # REMOVED INCORRECT LINE: user.calorie_goal = ... 
 
-        # --- THE FIX: CHECK IF STATS ALREADY EXIST ---
+        # Check if stats already exist
         existing_stats = UserStats.query.filter_by(user_id=uid).first()
 
         if existing_stats:
-            # UPDATE existing row
-            print(f"DEBUG: Updating existing stats for User {uid}")
             existing_stats.weight = weight
             existing_stats.height = height
             existing_stats.age = age
@@ -177,10 +203,9 @@ def add_user_stats(user_id):
             existing_stats.activity_level = activity
             existing_stats.bmi = bmi
             existing_stats.target_weight = target_weight
-            existing_stats.date = datetime.now()
+            existing_stats.calorie_target = int(calorie_target) 
+            existing_stats.updated_at = datetime.now()
         else:
-            # CREATE new row
-            print(f"DEBUG: Creating new stats for User {uid}")
             new_stats = UserStats(
                 user_id=user.id,
                 weight=weight,
@@ -190,7 +215,8 @@ def add_user_stats(user_id):
                 activity_level=activity,
                 bmi=bmi,
                 target_weight=target_weight,
-                date=datetime.now()
+                calorie_target=int(calorie_target), 
+                updated_at=datetime.now()
             )
             db.session.add(new_stats)
         
@@ -199,7 +225,7 @@ def add_user_stats(user_id):
         return jsonify({
             "message": "Stats saved successfully", 
             "bmi": bmi,
-            "calorie_goal": user.calorie_goal
+            "calorie_goal": int(calorie_target)
         }), 201
 
     except Exception as e:
@@ -207,7 +233,6 @@ def add_user_stats(user_id):
         print(f"CRITICAL DB ERROR: {e}")
         return jsonify({"error": f"Database error: {str(e)}"}), 500
     
-# Update user stats
 @app.route('/api/user/<int:user_id>/stats', methods=['PUT'])
 def update_user_stats(user_id):
     user = User.query.get_or_404(user_id)
@@ -221,10 +246,8 @@ def update_user_stats(user_id):
     new_stats = UserStats(
         user_id=user.id,
         weight=data.get('weight'),
-        weight_unit=data.get('weight_unit'),
-        height=data.get('height'),
-        height_unit=data.get('height_unit'),
-        date=datetime.utcnow() 
+        # FIX: Use updated_at instead of date
+        updated_at=datetime.utcnow() 
     )
 
     try:
@@ -235,73 +258,50 @@ def update_user_stats(user_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
     
-#*************************** Food log and tracking ***********************
+# --- FOOD LOGGING ---
 
 @app.route('/api/food/search/<query>/<int:user_id>', methods=['GET'])
 def search_food(query, user_id):
-    # 1. First, check our local database (Fastest)
-    local_result = Ingredient.query.filter(Ingredient.name.ilike(f"%{query}%")).first()
-    
-    food_data = None
-    
-    if local_result:
-        print(f"Found '{query}' locally!")
-        food_data = {
-            "meal_name": local_result.name,
-            "protein": local_result.protein_per_unit or 0,
-            "fats": local_result.fats_per_unit or 0,
-            "carbs": local_result.carbs_per_unit or 0,
-            "calories": local_result.calories_per_unit
-        }
-    else:
-        print(f"Searching USDA for '{query}'...")
-        usda_result, status_code = fetch_nutritional_data(query)
-        
-        if status_code == 200:
-            food_data = usda_result
-            
-            try:
-                exists = Ingredient.query.filter_by(name=food_data['meal_name']).first()
-                if not exists:
-                    new_ingredient = Ingredient(
-                        name=food_data['meal_name'],
-                        unit='100g', 
-                        calories_per_unit=food_data['calories'],
-                        protein_per_unit=food_data['protein'],
-                        carbs_per_unit=food_data['carbs'],
-                        fats_per_unit=food_data['fats']
-                    )
-                    db.session.add(new_ingredient)
-                    db.session.commit()
-                    print(f"Saved '{food_data['meal_name']}' to database.")
-            except Exception as e:
-                db.session.rollback()
-                print(f"Error saving to DB: {e}")
-
-    if not food_data:
-        return jsonify({"error": "Food not found"}), 404
-
-
     try:
-        new_log = MealLog(
-            user_id=user_id,
-            meal_name=food_data['meal_name'],
-            protein=food_data['protein'],
-            fats=food_data['fats'],
-            carbs=food_data['carbs'],
-            calories=food_data['calories'],
-            date=datetime.now(timezone.utc)
-        )
+        # 1. Check local "Learned" Database
+        ing = Ingredient.query.filter(Ingredient.name.ilike(f"%{query}%")).first()
+        
+        if ing:
+            meal_name, calories, protein, fats, carbs = ing.name, ing.calories_per_unit, ing.protein_per_unit, ing.fats_per_unit, ing.carbs_per_unit
+            recipe = ing.recipe_json
+            # Generate recipe if the seeded item is missing one
+            if not recipe:
+                recipe = generate_ai_recipe(meal_name)
+                ing.recipe_json = recipe
+                db.session.commit()
+        else:
+            # 2. Fetch Fresh Data (USDA + AI Recipe)
+            data, status = fetch_nutritional_data(query)
+            if status != 200: return jsonify({"error": "Not found"}), 404
+            
+            meal_name, calories, protein, fats, carbs = data['meal_name'], data['calories'], data['protein'], data['fats'], data['carbs']
+            recipe = data.get('recipe')
+
+            # Cache in DB
+            new_ing = Ingredient(name=meal_name, calories_per_unit=calories, protein_per_unit=protein, fats_per_unit=fats, carbs_per_unit=carbs, recipe_json=recipe)
+            db.session.add(new_ing)
+            db.session.commit()
+
+        # 3. Log to Daily History
+        new_log = MealLog(user_id=user_id, meal_name=meal_name, protein=protein, fats=fats, carbs=carbs, calories=calories, date=datetime.now(timezone.utc))
         db.session.add(new_log)
         db.session.commit()
-        
 
-        food_data['id'] = new_log.id 
-        return jsonify(food_data), 200
-        
+        return jsonify({
+            "meal_name": meal_name,
+            "calories": calories,
+            "protein": protein, "fats": fats, "carbs": carbs,
+            "recipe": recipe,
+            "id": new_log.id
+        }), 200
     except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+        print(f"Search Error: {e}")
+        return jsonify({"error": "Internal server error"}), 500
 @app.route('/api/user/<int:user_id>/meal-log', methods=['POST'])
 def log_meal(user_id):
     data = request.get_json()
@@ -331,7 +331,6 @@ def log_meal(user_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-# Get users meal log
 @app.route('/api/user/<int:user_id>/meal-log', methods=['GET'])
 def get_meal_log(user_id):
     meals = MealLog.query.filter_by(user_id=user_id).order_by(MealLog.date.desc()).all()
@@ -346,21 +345,6 @@ def get_meal_log(user_id):
     } for meal in meals]
     return jsonify(meal_list), 200
 
-# Get meal log history
-@app.route('/api/user/<int:user_id>/meal-log/history', methods=['GET'])
-def get_meal_log_history(user_id):
-    meals = MealLog.query.filter_by(user_id=user_id).order_by(MealLog.date.desc()).all()
-    meal_history = [{
-        "meal_name": meal.meal_name,
-        "protein": meal.protein,
-        "fats": meal.fats,
-        "carbs": meal.carbs,
-        "calories": meal.calories,
-        "date": meal.date.strftime("%Y-%m-%d %H:%M:%S")
-    } for meal in meals]
-    return jsonify(meal_history), 200
-
-# Delete a meal log entry
 @app.route('/api/user/<int:user_id>/meal-log/<int:meal_id>', methods=['DELETE'])
 def delete_meal_log_entry(user_id, meal_id):
     meal = MealLog.query.filter_by(id=meal_id, user_id=user_id).first()
@@ -374,9 +358,8 @@ def delete_meal_log_entry(user_id, meal_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-# Delete all meal logs
 @app.route('/api/user/<int:user_id>/meal-log', methods=['DELETE'])
-def delete_meal_log(user_id):
+def delete_all_meal_logs(user_id):
     try:
         MealLog.query.filter_by(user_id=user_id).delete()
         db.session.commit()
@@ -385,7 +368,7 @@ def delete_meal_log(user_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
     
-#***********************Recipe Management Routes*************************/
+# --- RECIPES ---
 
 @app.route('/api/recipes', methods=['POST'])
 def create_recipe():
@@ -415,7 +398,6 @@ def create_recipe():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-# Get recipe
 @app.route('/api/recipes/<int:recipe_id>', methods=['GET'])
 def get_recipe(recipe_id):
     source = request.args.get('source', 'local')
@@ -429,7 +411,6 @@ def get_recipe(recipe_id):
     data = format_recipe_with_servings(recipe, servings)
     return jsonify(data), 200
 
-# Search recipes
 @app.route('/api/recipes/search', methods=['GET'])
 def search_recipes():
     query = request.args.get('query')
@@ -438,12 +419,13 @@ def search_recipes():
     results = search_recipes_spoonacular(query)
     return jsonify(results), 200
 
-# Get user stats
+# --- STATS READERS ---
+
+# In backend/app.py
+
 @app.route('/api/user/<int:user_id>/stats/latest', methods=['GET'])
 def get_user_stats(user_id):
-    stats = UserStats.query.filter_by(user_id=user_id).order_by(UserStats.date.desc()).first()
-    
-    user = User.query.get(user_id)
+    stats = UserStats.query.filter_by(user_id=user_id).order_by(UserStats.updated_at.desc()).first()
     
     if stats:
         return jsonify({
@@ -452,13 +434,27 @@ def get_user_stats(user_id):
             "age": stats.age,
             "bmi": stats.bmi,
             "activity_level": stats.activity_level,
-            "target": user.calorie_goal if user else 2000, 
-            "calorie_target": user.calorie_goal if user else 2000,
+            "target": stats.calorie_target, 
+            "calorie_target": stats.calorie_target,
             "target_weight": stats.target_weight,
-            "date": stats.date
+            "updated_at": stats.updated_at
         }), 200
     
-    return jsonify({"error": "No stats found"}), 404
+    return jsonify({"error": "No stats found"}), 404@app.route('/api/user/<int:user_id>/weight', methods=['POST'])
+def update_weight(user_id):
+    data = request.json
+    new_weight = data.get('weight')
+    
+    result = log_user_weight(user_id, new_weight)
+    if result:
+        return jsonify(result), 200
+    return jsonify({"error": "User not found"}), 404
+
+@app.route('/api/user/<int:user_id>/prediction', methods=['GET'])
+def get_prediction(user_id):
+    result = predict_goal_date(user_id)
+    return jsonify(result), 200
+
 # --- AI ROUTES ---
 
 @app.route('/api/ai/advice', methods=['POST'])
@@ -482,7 +478,7 @@ def get_advice():
         if response is None:
             return jsonify({
                 "error": "AI generation failed.",
-                "details": "The AI service returned no data. Check server logs."
+                "details": "The AI service returned no data."
             }), 500
 
         return jsonify(response)

@@ -7,12 +7,11 @@ import { Utensils, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { jwtDecode } from "jwt-decode";
 import { toast } from "sonner";
+import { TibebPattern } from "./TibebPattern"; 
 
-interface AuthPageProps {
-  onAuth: () => void;
-}
+const API_URL = "http://127.0.0.1:5000";
 
-export function AuthPage({ onAuth }: AuthPageProps) {
+export function AuthPage({ onAuth }: { onAuth: () => void }) {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({ username: "", password: "", email: "" });
@@ -20,36 +19,24 @@ export function AuthPage({ onAuth }: AuthPageProps) {
   const handleGoogleSuccess = async (credentialResponse: any) => {
     setLoading(true);
     try {
-      // 1. Decode locally to get the picture immediately
-      if (credentialResponse.credential) {
-        const decoded: any = jwtDecode(credentialResponse.credential);
-        if (decoded.picture) {
-            localStorage.setItem('user_picture', decoded.picture);
-        }
-      }
-
-      // 2. Send token to backend
-      const res = await fetch('http://127.0.0.1:5000/api/auth/google', {
+      const res = await fetch(`${API_URL}/api/auth/google`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: credentialResponse.credential })
       });
 
+      if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       
-      if (res.ok) {
-        localStorage.setItem('user_id', data.user_id);
-        localStorage.setItem('username', data.username);
-        // Ensure backend picture is saved if available
-        if (data.picture) localStorage.setItem('user_picture', data.picture);
-        
-        toast.success(`Welcome back, ${data.username}!`);
-        onAuth();
-      } else {
-        toast.error(data.error || "Login failed");
-      }
+      localStorage.setItem('user_id', data.user_id);
+      localStorage.setItem('username', data.username);
+      if (data.picture) localStorage.setItem('user_picture', data.picture);
+      
+      toast.success(`Welcome, ${data.username}!`);
+      onAuth();
     } catch (error) {
-      toast.error("Connection error");
+      console.error("Auth Error:", error);
+      toast.error("Google Login Failed. Check Console.");
     } finally {
       setLoading(false);
     }
@@ -58,103 +45,79 @@ export function AuthPage({ onAuth }: AuthPageProps) {
   const handleManualAuth = async () => {
     setLoading(true);
     const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-    
     try {
-      const res = await fetch(`http://127.0.0.1:5000${endpoint}`, {
+      const res = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
-      
       const data = await res.json();
-      
       if (res.ok) {
         localStorage.setItem('user_id', data.user_id);
         localStorage.setItem('username', data.username);
-        // Clear picture for manual users (unless you add avatar upload later)
-        localStorage.removeItem('user_picture');
-        
-        toast.success(isLogin ? "Login successful!" : "Account created!");
         onAuth();
       } else {
-        toast.error(data.error || "Authentication failed");
+        toast.error(data.error);
       }
-    } catch (error) {
-        toast.error("Server connection failed");
+    } catch (e) {
+      toast.error("Server Connection Failed");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f5f1ec] p-4">
-      <Card className="w-full max-w-md border-[#8b5a3c]/20 shadow-xl">
+    <div className="min-h-screen relative flex items-center justify-center bg-[#faf8f5] p-4">
+      <div className="absolute inset-0 z-0 opacity-10 pointer-events-none">
+        <TibebPattern className="w-full h-full text-[#8b5a3c]" variant="full" />
+      </div>
+
+      <Card className="w-full max-w-md z-10 shadow-xl border-[#8b5a3c]/20 bg-white/95 backdrop-blur">
         <CardHeader className="text-center">
-          <div className="mx-auto w-12 h-12 bg-[#8b5a3c] rounded-xl flex items-center justify-center mb-4">
-            <Utensils className="w-6 h-6 text-white" />
+          <div className="mx-auto w-12 h-12 bg-[#8b5a3c] rounded-xl flex items-center justify-center mb-2">
+            <Utensils className="text-white w-6 h-6" />
           </div>
-          <CardTitle className="text-2xl text-[#2d2520]">EAThiopia</CardTitle>
-          <CardDescription>
-            {isLogin ? "Welcome back! Please login." : "Create your account to get started."}
-          </CardDescription>
+          <CardTitle className="text-2xl font-bold">EAThiopia</CardTitle>
+          <CardDescription>{isLogin ? "Sign in to your account" : "Create your account"}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex justify-center">
-            <GoogleLogin 
+        <CardContent className="space-y-4">
+          <div className="flex justify-center w-full overflow-hidden">
+             <GoogleLogin 
                 onSuccess={handleGoogleSuccess} 
-                onError={() => toast.error("Google Login Failed")}
-                theme="outline"
-                size="large"
-                width="100%"
-            />
+                onError={() => toast.error("Google Error")}
+                useOneTap
+                theme="filled_blue"
+                shape="pill"
+             />
           </div>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-gray-200" /></div>
-            <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-gray-500">Or continue with</span></div>
+          <div className="relative text-center text-xs uppercase text-gray-400">
+            <hr className="border-gray-200" />
+            <span className="relative -top-2 bg-white px-2">Or use credentials</span>
           </div>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Username</Label>
-              <Input 
-                value={formData.username}
-                onChange={(e) => setFormData({...formData, username: e.target.value})} 
-                placeholder="Enter username" 
-              />
-            </div>
+          <div className="space-y-2">
+            <Label>Username</Label>
+            <Input value={formData.username} onChange={(e) => setFormData({...formData, username: e.target.value})} />
+            
             {!isLogin && (
-                <div className="space-y-2">
+              <>
                 <Label>Email</Label>
-                <Input 
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})} 
-                    placeholder="Enter email" 
-                />
-                </div>
+                <Input value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
+              </>
             )}
-            <div className="space-y-2">
-              <Label>Password</Label>
-              <Input 
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({...formData, password: e.target.value})} 
-                placeholder="Enter password" 
-              />
-            </div>
 
-            <Button className="w-full bg-[#8b5a3c] hover:bg-[#6b4423]" onClick={handleManualAuth} disabled={loading}>
-              {loading ? <Loader2 className="animate-spin" /> : (isLogin ? "Sign In" : "Create Account")}
-            </Button>
-
-            <div className="text-center text-sm">
-                <span className="text-gray-500">{isLogin ? "Don't have an account? " : "Already have an account? "}</span>
-                <button onClick={() => setIsLogin(!isLogin)} className="text-[#8b5a3c] hover:underline font-medium">
-                    {isLogin ? "Sign up" : "Sign in"}
-                </button>
-            </div>
+            <Label>Password</Label>
+            <Input type="password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} />
           </div>
+
+          <Button className="w-full bg-[#8b5a3c] hover:bg-[#6b4423]" onClick={handleManualAuth} disabled={loading}>
+            {loading ? <Loader2 className="animate-spin" /> : (isLogin ? "Sign In" : "Register")}
+          </Button>
+
+          <button onClick={() => setIsLogin(!isLogin)} className="w-full text-sm text-[#8b5a3c] hover:underline">
+            {isLogin ? "Need an account? Sign up" : "Have an account? Sign in"}
+          </button>
         </CardContent>
       </Card>
     </div>
