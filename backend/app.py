@@ -21,12 +21,20 @@ from services import (
 )
 from ai import AIService
 from analysis import PandasAnalysis
-database_url = os.environ.get('DATABASE_URL')
+
 app = Flask(__name__)
+
+database_url = os.environ.get('DATABASE_URL')
+
+if not database_url:
+    database_url = "sqlite:///local.db"
+
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = ''
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 
 db.init_app(app)
 
@@ -69,17 +77,14 @@ def google_auth():
     google_id = user_info['google_id']
     name = user_info.get('name', 'User')
     
-    # 1. Find by Google ID
     user = User.query.filter_by(google_id=google_id).first()
 
-    # 2. Find by Email
     if not user:
         user = User.query.filter_by(email=email).first()
         if user:
             user.google_id = google_id
             db.session.commit()
 
-    # 3. Create New User
     if not user:
         base_username = name
         counter = 1
@@ -173,7 +178,6 @@ def add_user_stats(user_id):
         gender = data.get('gender', 'Male') 
         activity = data.get('activity_level', 'moderate')
         
-        # Calculate Calorie Target
         calorie_target = data.get('calorie_target') or data.get('target')
         if not calorie_target:
              bmr = (10 * weight) + (6.25 * height) - (5 * age)
@@ -255,7 +259,6 @@ def search_food(query, user_id):
                 ing.recipe_json = recipe
                 db.session.commit()
             
-            # Use variables so we can return them later
             meal_name, calories, protein, fats, carbs = ing.name, ing.calories_per_unit, ing.protein_per_unit, ing.fats_per_unit, ing.carbs_per_unit
 
         else:
@@ -375,7 +378,6 @@ def get_user_stats(user_id):
         }), 200
     return jsonify({"error": "No stats found"}), 404
 
-# --- FIX: SEPARATED THE MERGED LINES HERE ---
 @app.route('/api/user/<int:user_id>/weight', methods=['POST'])
 def update_weight(user_id):
     data = request.json
@@ -400,6 +402,7 @@ def get_advice():
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 @app.route('/init-db')
 def init_db():
     try:
@@ -407,9 +410,12 @@ def init_db():
         return "Database tables created successfully! You can now log in."
     except Exception as e:
         return f"Error creating tables: {str(e)}"
+
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(debug=True)
-
-#COOL STUFF
+    
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
+    
+#COOL STUFF!!
