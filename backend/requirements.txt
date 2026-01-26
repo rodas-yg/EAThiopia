@@ -9,7 +9,7 @@ charset-normalizer==3.3.2
 click==8.1.7
 cryptography==42.0.5
 distro==1.9.0
-dotenv==0.0.5
+# REMOVED "dotenv==0.0.5" - This was causing the crash!
 Flask==3.0.2
 flask-cors==4.0.0
 Flask-Login==0.6.3
