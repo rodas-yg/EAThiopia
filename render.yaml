@@ -6,7 +6,6 @@ databases:
     user: rodasgeberhiwet
 
 services:
-  # 1. THE BACKEND
   - type: web
     name: eathiopia-backend
     runtime: python
@@ -25,15 +24,14 @@ services:
       - key: PYTHON_VERSION
         value: 3.10.0
 
-  # 2. THE FRONTEND
-  - type: static
+  - type: web                 
     name: eathiopia-frontend
-    # REMOVED "runtime: static" - This caused the error!
+    env: static               
     region: oregon
     plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
-    publishDir: dist
+    staticPublishPath: dist   
     routes:
       - type: rewrite
         source: /*
