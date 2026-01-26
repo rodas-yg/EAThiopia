@@ -26,7 +26,6 @@ services:
 
   - type: static
     name: eathiopia-frontend
-    runtime: static
     region: oregon
     plan: free
     rootDir: frontend
