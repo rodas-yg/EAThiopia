@@ -1,230 +1,159 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "./ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Button } from "./ui/button";
-import { Plus, X } from "lucide-react";
 import { ScrollArea } from "./ui/scroll-area";
-import { motion } from "motion/react";
-import { TibebPattern } from "./TibebPattern";
+import { Plus, Flame, Clock, Utensils } from "lucide-react";
 
 export interface FoodWithRecipe {
-  id: string;
+  id?: string | number;
   name: string;
-  nameAmharic?: string;
   calories: number;
   protein: number;
   carbs: number;
   fat: number;
-  serving: string;
-  image: string;
-  recipe: {
-    description: string;
-    ingredients: string[];
-    instructions: string[];
+  description?: string;
+  image?: string;
+  
+  // Accept any format the API sends us
+  recipe?: string | {
+    description?: string;
+    ingredients?: string[];
+    instructions?: string[] | string;
     prepTime?: string;
     cookTime?: string;
   };
+  
+  ingredients?: string[];
 }
 
-interface FoodDetailsModalProps {
+interface ModalProps {
   food: FoodWithRecipe | null;
   isOpen: boolean;
   onClose: () => void;
-  onAddFood?: (food: FoodWithRecipe) => void;
+  onAddFood: (food: FoodWithRecipe) => void;
 }
 
-export function FoodDetailsModal({ food, isOpen, onClose, onAddFood }: FoodDetailsModalProps) {
+export function FoodDetailsModal({ food, isOpen, onClose, onAddFood }: ModalProps) {
   if (!food) return null;
+
+  // --- SMART HELPERS to read data regardless of format ---
+
+  const getInstructions = (): string => {
+    if (!food.recipe) return "";
+
+    // 1. Simple String
+    if (typeof food.recipe === 'string') return food.recipe;
+
+    // 2. Object with instructions array
+    if (Array.isArray(food.recipe.instructions)) {
+        return food.recipe.instructions.join('\n');
+    }
+
+    // 3. Object with instructions string
+    if (typeof food.recipe.instructions === 'string') {
+        return food.recipe.instructions;
+    }
+
+    return "";
+  };
+
+  const getIngredients = (): string[] => {
+    // 1. Check top-level ingredients first
+    if (food.ingredients && food.ingredients.length > 0) return food.ingredients;
+
+    // 2. Check inside recipe object
+    if (typeof food.recipe === 'object' && food.recipe !== null && 'ingredients' in food.recipe) {
+        return food.recipe.ingredients || [];
+    }
+    return [];
+  };
+
+  // Run the helpers
+  const instructions = getInstructions();
+  const ingredients = getIngredients();
+  
+  // Extract times if available
+  const prepTime = typeof food.recipe === 'object' ? food.recipe?.prepTime : null;
+  const cookTime = typeof food.recipe === 'object' ? food.recipe?.cookTime : null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] p-0 overflow-hidden border-[#8b5a3c]/20">
-        <div className="absolute inset-0 opacity-5 pointer-events-none">
-          <TibebPattern className="w-full h-full text-[#8b5a3c]" />
-        </div>
+      <DialogContent className="max-w-md max-h-[85vh] flex flex-col p-0 bg-[#faf8f5] border-[#8b5a3c]/20">
         
-        <ScrollArea className="h-full max-h-[90vh]">
-          <div className="relative">
-            {/* Hero Image */}
-            <div className="relative h-64 overflow-hidden">
-              <img
-                src={food.image}
-                alt={food.name}
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-              <div className="absolute bottom-0 left-0 right-0 p-6">
-                <motion.h2
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-3xl font-bold text-white mb-2"
-                >
-                  {food.name}
-                </motion.h2>
-                {food.nameAmharic && (
-                  <motion.p
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="text-xl text-white/90 font-['Crimson_Text']"
-                  >
-                    {food.nameAmharic}
-                  </motion.p>
-                )}
-              </div>
-              <button
-                onClick={onClose}
-                className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6 relative">
-              {/* Nutritional Information */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-              >
-                <h3 className="text-lg font-semibold text-[#2d2520] mb-3 flex items-center">
-                  Nutritional Information
-                  <span className="ml-2 text-sm text-[#786f66]">({food.serving})</span>
-                </h3>
-                <div className="grid grid-cols-4 gap-4">
-                  <div className="bg-[#f5f1ec] rounded-lg p-4 text-center border border-[#8b5a3c]/10">
-                    <div className="text-2xl font-bold text-[#8b5a3c]">{food.calories}</div>
-                    <div className="text-sm text-[#786f66]">Calories</div>
-                  </div>
-                  <div className="bg-[#f5f1ec] rounded-lg p-4 text-center border border-[#8b5a3c]/10">
-                    <div className="text-2xl font-bold text-[#8b5a3c]">{food.protein}g</div>
-                    <div className="text-sm text-[#786f66]">Protein</div>
-                  </div>
-                  <div className="bg-[#f5f1ec] rounded-lg p-4 text-center border border-[#8b5a3c]/10">
-                    <div className="text-2xl font-bold text-[#8b5a3c]">{food.carbs}g</div>
-                    <div className="text-sm text-[#786f66]">Carbs</div>
-                  </div>
-                  <div className="bg-[#f5f1ec] rounded-lg p-4 text-center border border-[#8b5a3c]/10">
-                    <div className="text-2xl font-bold text-[#8b5a3c]">{food.fat}g</div>
-                    <div className="text-sm text-[#786f66]">Fat</div>
-                  </div>
+        {/* IMAGE HEADER */}
+        {food.image ? (
+            <div className="relative h-48 w-full">
+                <img src={food.image} alt={food.name} className="w-full h-full object-cover rounded-t-lg" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                <div className="absolute bottom-4 left-4 text-white">
+                    <DialogTitle className="text-2xl font-bold">{food.name}</DialogTitle>
+                    <p className="opacity-90">{food.description || "Ethiopian Delicacy"}</p>
                 </div>
-              </motion.div>
-
-              {/* Recipe Description */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-              >
-                <h3 className="text-lg font-semibold text-[#2d2520] mb-3">About This Dish</h3>
-                <p className="text-[#786f66] leading-relaxed">{food.recipe.description}</p>
-              </motion.div>
-
-              {/* Time Information */}
-              {(food.recipe.prepTime || food.recipe.cookTime) && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 }}
-                  className="flex gap-4 text-sm"
-                >
-                  {food.recipe.prepTime && (
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-[#2d2520]">Prep:</span>
-                      <span className="text-[#786f66]">{food.recipe.prepTime}</span>
-                    </div>
-                  )}
-                  {food.recipe.cookTime && (
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-[#2d2520]">Cook:</span>
-                      <span className="text-[#786f66]">{food.recipe.cookTime}</span>
-                    </div>
-                  )}
-                </motion.div>
-              )}
-
-              <div className="absolute left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#8b5a3c]/20 to-transparent" />
-
-              {/* Ingredients */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
-                className="pt-4"
-              >
-                <h3 className="text-lg font-semibold text-[#2d2520] mb-3">Ingredients</h3>
-                <ul className="space-y-2">
-                  {food.recipe.ingredients.map((ingredient, index) => (
-                    <motion.li
-                      key={index}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.5 + index * 0.05 }}
-                      className="flex items-start gap-3 text-[#786f66]"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#8b5a3c] mt-2 flex-shrink-0" />
-                      <span>{ingredient}</span>
-                    </motion.li>
-                  ))}
-                </ul>
-              </motion.div>
-
-              <div className="absolute left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#8b5a3c]/20 to-transparent" />
-
-              {/* Instructions */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6 }}
-                className="pt-4"
-              >
-                <h3 className="text-lg font-semibold text-[#2d2520] mb-3">Instructions</h3>
-                <ol className="space-y-4">
-                  {food.recipe.instructions.map((instruction, index) => (
-                    <motion.li
-                      key={index}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.6 + index * 0.05 }}
-                      className="flex items-start gap-4"
-                    >
-                      <span className="flex-shrink-0 w-8 h-8 rounded-full bg-[#8b5a3c] text-white flex items-center justify-center font-semibold text-sm">
-                        {index + 1}
-                      </span>
-                      <span className="text-[#786f66] pt-1">{instruction}</span>
-                    </motion.li>
-                  ))}
-                </ol>
-              </motion.div>
-
-              {/* Add Button */}
-              {onAddFood && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.7 }}
-                  className="sticky bottom-0 bg-gradient-to-t from-white via-white to-transparent pt-6 pb-2"
-                >
-                  <Button
-                    onClick={() => {
-                      onAddFood(food);
-                      onClose();
-                    }}
-                    className="w-full bg-[#8b5a3c] hover:bg-[#6b4423] text-white h-12"
-                  >
-                    <Plus className="w-5 h-5 mr-2" />
-                    Add to My Meals
-                  </Button>
-                </motion.div>
-              )}
             </div>
+        ) : (
+            <DialogHeader className="p-6 pb-2">
+                <DialogTitle className="text-2xl font-bold text-[#2d2520]">{food.name}</DialogTitle>
+                <DialogDescription>{food.description}</DialogDescription>
+            </DialogHeader>
+        )}
+
+        <ScrollArea className="flex-1 p-6 pt-2">
+          
+          {/* MACROS CARD */}
+          <div className="grid grid-cols-3 gap-2 mb-6 text-center">
+             <div className="bg-white p-3 rounded-xl border border-[#8b5a3c]/10 shadow-sm"><div className="text-xs text-[#786f66]">Protein</div><div className="font-bold">{food.protein}g</div></div>
+             <div className="bg-white p-3 rounded-xl border border-[#8b5a3c]/10 shadow-sm"><div className="text-xs text-[#786f66]">Carbs</div><div className="font-bold">{food.carbs}g</div></div>
+             <div className="bg-white p-3 rounded-xl border border-[#8b5a3c]/10 shadow-sm"><div className="text-xs text-[#786f66]">Fat</div><div className="font-bold">{food.fat}g</div></div>
           </div>
+
+          {/* TIME BADGES */}
+          {(prepTime || cookTime) && (
+             <div className="flex gap-4 mb-6 text-sm text-[#786f66] bg-white p-2 rounded-lg border border-[#8b5a3c]/10">
+                {prepTime && <div className="flex items-center gap-1"><Clock className="w-4 h-4 text-[#8b5a3c]"/> Prep: {prepTime}</div>}
+                {cookTime && <div className="flex items-center gap-1"><Utensils className="w-4 h-4 text-[#8b5a3c]"/> Cook: {cookTime}</div>}
+             </div>
+          )}
+
+           {/* INGREDIENTS LIST */}
+           {ingredients.length > 0 && (
+            <div className="mb-6">
+                <h3 className="text-sm font-bold text-[#8b5a3c] uppercase mb-2">Ingredients</h3>
+                <ul className="list-disc list-inside space-y-1 text-sm text-[#5a524a]">
+                    {ingredients.map((ing, i) => (
+                        <li key={i}>{ing}</li>
+                    ))}
+                </ul>
+            </div>
+          )}
+
+          {/* INSTRUCTIONS TEXT */}
+          {instructions && (
+             <div className="mb-6">
+                <h3 className="text-sm font-bold text-[#8b5a3c] uppercase mb-2 flex items-center gap-2">
+                    <Flame className="w-4 h-4" /> Instructions
+                </h3>
+                <div className="text-sm text-[#5a524a] leading-relaxed whitespace-pre-line">
+                    {instructions}
+                </div>
+             </div>
+          )}
+
+          {/* FALLBACK MESSAGE */}
+          {!instructions && ingredients.length === 0 && (
+              <div className="p-4 bg-yellow-50 text-yellow-800 rounded-lg text-sm text-center border border-yellow-200">
+                  Full recipe details not available for this item.
+              </div>
+          )}
+
         </ScrollArea>
+
+        <div className="p-4 border-t border-[#8b5a3c]/10 bg-white">
+            <Button 
+                onClick={() => onAddFood(food)} 
+                className="w-full bg-[#8b5a3c] hover:bg-[#6b4423] text-lg h-12"
+            >
+                <Plus className="mr-2 w-5 h-5" /> Add to Log ({food.calories} cal)
+            </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

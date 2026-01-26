@@ -1,26 +1,69 @@
-import requests # pyright: ignore[reportMissingModuleSource]
+import requests 
 import json
 import os
-from dotenv import load_dotenv # pyright: ignore[reportMissingModuleSource]
+import re
+import google.generativeai as genai
+from dotenv import load_dotenv 
 from models import Recipe, db, Ingredient, RecipeIngredient
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 load_dotenv() 
 
-
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-spoonacular_api_key = os.getenv("SPOONACULAR_API_KEY")
+spoonacular_api_key = os.getenv("SPOONACULAR_API_KEY") 
 usda_api_key = os.getenv("usda_api_key")
+GOOGLE_API_KEY = os.getenv("gemini_key")
+
+# --- CONFIGURE AI ---
+if GOOGLE_API_KEY:
+    genai.configure(api_key=GOOGLE_API_KEY)
+
+def generate_ai_recipe(food_name):
+    """
+    Uses Gemini to generate a quick recipe.
+    Improved: Falls back to raw text if JSON fails.
+    """
+    if not GOOGLE_API_KEY:
+        print("ERROR: GOOGLE_API_KEY is missing in .env")
+        return "Please add GOOGLE_API_KEY to your .env file to see recipes."
+        
+    try:
+        # Use 'gemini-1.5-flash' (Faster/Newer) or fallback to 'gemini-pro'
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        prompt = f"""
+        Write a simple cooking recipe for {food_name}.
+        Include ingredients and steps.
+        Format it as a JSON object with keys: "description", "ingredients" (list), "instructions" (list), "prepTime", "cookTime".
+        If you cannot use JSON, just write the recipe in plain text.
+        """
+        
+        response = model.generate_content(prompt)
+        text_output = response.text
+
+        # 1. Try to extract JSON
+        try:
+            match = re.search(r'\{.*\}', text_output, re.DOTALL)
+            if match:
+                return json.loads(match.group(0))
+        except:
+            pass # JSON failed? No problem, move to step 2.
+
+        # 2. Fallback: Return the raw text! 
+        # (The Frontend now knows how to handle plain text)
+        print(f"AI returned text format for {food_name} (this is good!)")
+        return text_output
+            
+    except Exception as e:
+        print(f"!!! AI API CRITICAL ERROR: {e}")
+        return "Recipe currently unavailable due to API connection issue."
+
 def fetch_nutritional_data(food_item):
+    """
+    Fetch nutritional data from USDA API and append AI Recipe.
+    """
     base_url = "https://api.nal.usda.gov/fdc/v1/foods/search"
-    '''
-    Fetch nutritional data for a given food item from USDA API.
-    Args:
-        food_item (str): Name of the food item to search for.
-    Returns:
-        dict: Nutritional data including protein, fats, carbs, and calories.
-    '''
     
     assert isinstance(food_item, str), "Food item must be a string"
     try:
@@ -40,13 +83,33 @@ def fetch_nutritional_data(food_item):
                         return n['value']
                 return 0
 
+            meal_name = data['foods'][0]['description']
+
+            # 1. Get Base Numbers
             meal_data = {
-                "meal_name": data['foods'][0]['description'],
+                "meal_name": meal_name,
                 "protein": get_nutrient([1003, 203]),
                 "fats": get_nutrient([204, 1004]),
                 "carbs": get_nutrient([205, 1005]),
                 "calories": get_nutrient([208, 1008]),
+                "image": None, 
             }
+
+            # 2. ADD AI RECIPE
+            print(f"Fetching recipe for: {meal_name}...") 
+            ai_recipe = generate_ai_recipe(meal_name)
+            
+            if isinstance(ai_recipe, dict):
+                # We got perfect JSON
+                meal_data["recipe"] = ai_recipe
+                meal_data["ingredients"] = ai_recipe.get("ingredients", [])
+                meal_data["description"] = ai_recipe.get("description", "USDA Food Item")
+            else:
+                # We got raw text (Fallback)
+                meal_data["recipe"] = ai_recipe 
+                meal_data["ingredients"] = [] # Frontend will just show the text instructions
+                meal_data["description"] = "USDA Food Item"
+
             return meal_data, 200
         else:
             print(f"USDA API Error: {response.status_code}") 
@@ -55,12 +118,8 @@ def fetch_nutritional_data(food_item):
         print(f"Exception in service: {e}") 
         return json.dumps({"error": str(e)}), 500
 
+# ... (Keep the rest of your file below: get_recipe_with_cache, etc.) ...
 def get_recipe_with_cache(recipe_id, source='local'):
-    api_key = spoonacular_api_key
-    base_url = "https://api.spoonacular.com/recipes/complexSearch"
-    """
-    Retrieves recipe. If it's a new Spoonacular ID, it saves it locally first.
-    """
     if source == 'spoonacular':
         cached = Recipe.query.filter_by(spoonacular_id=recipe_id).first()
         if cached:
@@ -89,10 +148,6 @@ def get_recipe_with_cache(recipe_id, source='local'):
     return Recipe.query.get(recipe_id)
 
 def _link_ingredient_to_recipe(recipe_id, api_ingredient_data):
-    """
-    Ensures an ingredient exists in the DB and links it to the recipe.
-    api_ingredient_data: dict from Spoonacular
-    """
     name = api_ingredient_data['name'].lower().strip()
     amount = api_ingredient_data.get('amount', 0)
     unit = api_ingredient_data.get('unit', 'g')
@@ -101,17 +156,16 @@ def _link_ingredient_to_recipe(recipe_id, api_ingredient_data):
 
     if not ingredient:
         ingredient = Ingredient(
-    name=name,
-    unit=unit,
-    calories_per_unit=0, 
-    protein_per_unit=0,
-    carbs_per_unit=0,
-    fats_per_unit=0
-)
+            name=name,
+            unit=unit,
+            calories_per_unit=0, 
+            protein_per_unit=0,
+            carbs_per_unit=0,
+            fats_per_unit=0
+        )
         db.session.add(ingredient)
         db.session.flush()
 
-    
     link = RecipeIngredient(
         recipe_id=recipe_id,
         ingredient_id=ingredient.id,
@@ -119,12 +173,7 @@ def _link_ingredient_to_recipe(recipe_id, api_ingredient_data):
     )
     db.session.add(link)
 
-
 def _fetch_from_spoonacular_api(spoonacular_id):
-    """
-    Calls the Spoonacular Information endpoint and standardizes the output.
-    """
-
     url = f"https://api.spoonacular.com/recipes/{spoonacular_id}/information"
     params = {
         "apiKey": spoonacular_api_key,
@@ -167,10 +216,8 @@ def _fetch_from_spoonacular_api(spoonacular_id):
     except Exception as e:
         print(f"Spoonacular API Fetch Error: {e}")
         return None
+
 def format_recipe_with_servings(recipe, requested_servings):
-    """
-    Adjusts ingredient amounts based on the requested serving size.
-    """
     ratio = float(requested_servings) / recipe.base_servings
 
     adjusted_ingredients = []
@@ -190,11 +237,7 @@ def format_recipe_with_servings(recipe, requested_servings):
         "ingredients": adjusted_ingredients
     }
     
-
 def verify_google_token(token):
-    """
-    Verifies the JWT token from the frontend with Google's servers.
-    """
     try:
         id_info = id_token.verify_oauth2_token(
             token, 
@@ -211,13 +254,11 @@ def verify_google_token(token):
     except ValueError as e:
         print(f"Token verification failed: {e}")
         return None
+
 def search_recipes_spoonacular(query):
-    """
-    Search for full recipes (Images, Instructions, Nutrition) via Spoonacular.
-    """
     url = "https://api.spoonacular.com/recipes/complexSearch"
     params = {
-        "apiKey": "rapi_ec4365ae628e6f98017e6b6fefd684b54d2330ba5041e0da",
+        "apiKey": spoonacular_api_key, 
         "query": query,
         "number": 12, 
         "addRecipeInformation": "true",

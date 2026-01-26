@@ -69,11 +69,11 @@ export function MealLogger({ meals, onAddMeal, onRemoveMeal }: MealLoggerProps) 
 
   const handleFoodClick = (food: FoodWithRecipe) => {
     setSelectedFood(food);
-    setIsDetailOpen(true); // Open the preview modal
+    setIsDetailOpen(true);
   };
 
   const handleConfirmAdd = (food: FoodWithRecipe) => {
-    // This runs only after the user clicks "Add" in the modal
+
     onAddMeal({
       foodName: food.name,
       calories: food.calories,
@@ -215,7 +215,7 @@ export function MealLogger({ meals, onAddMeal, onRemoveMeal }: MealLoggerProps) 
         food={selectedFood}
         isOpen={isDetailOpen}
         onClose={() => setIsDetailOpen(false)}
-        onAddFood={handleConfirmAdd} // Connects the Add button
+        onAddFood={handleConfirmAdd} 
       />
     </Card>
   );

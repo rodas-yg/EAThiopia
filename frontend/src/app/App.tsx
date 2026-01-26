@@ -7,7 +7,7 @@ import { MealSuggestions } from "./components/MealSuggestions";
 import { Onboarding, OnboardingData } from "./components/Onboarding";
 import { AuthPage } from "./components/AuthPage";
 import { Statistics } from "./components/Statistics";
-import { FoodWithRecipe } from "./components/FoodDetailsModal"; 
+import { FoodWithRecipe, FoodDetailsModal } from "./components/FoodDetailsModal"; 
 
 import { Utensils, LogOut, BarChart3, Home, Loader2 } from "lucide-react";
 import { Button } from "./components/ui/button";
@@ -23,19 +23,24 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>("auth");
   const [currentPage, setCurrentPage] = useState<Page>("home");
   const [loading, setLoading] = useState(true);
+  
+  // User Data
   const [userId, setUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState("User");
+  const [userPicture, setUserPicture] = useState<string | null>(null);
+
   const [calorieTarget, setCalorieTarget] = useState(2000);
   const [meals, setMeals] = useState<MealEntry[]>([]);
+  
+  // Search & Modal State
+  const [sidebarSearchResults, setSidebarSearchResults] = useState<FoodWithRecipe[]>([]);
+  const [selectedFood, setSelectedFood] = useState<FoodWithRecipe | null>(null); 
 
-  // --- STRICT LOGIN LOGIC ---
   useEffect(() => {
     const initApp = async () => {
       const storedUserId = localStorage.getItem('user_id');
       
-      // If no ID, go straight to login
       if (!storedUserId || storedUserId === "undefined") {
-        console.log("No user ID found, redirecting to Auth.");
         handleLogout(); 
         setLoading(false);
         return;
@@ -43,39 +48,26 @@ export default function App() {
 
       setUserId(storedUserId);
       const storedName = localStorage.getItem('username');
-      if (storedName) setUserName(storedName);
+      const storedPic = localStorage.getItem('user_picture');
       
-      // Verify User Exists in Backend
+      if (storedName) setUserName(storedName);
+      if (storedPic) setUserPicture(storedPic);
+
       try {
         const res = await fetch(`http://127.0.0.1:5000/api/user/${storedUserId}/stats/latest`);
-        
         if (res.ok) {
-            // Success: User exists and has stats -> Go to Dashboard
             const data = await res.json();
             if (data.calorie_target) setCalorieTarget(data.calorie_target);
             await fetchMeals(storedUserId);
             setAppState("app");
         } else if (res.status === 404) {
-            // 404 usually means "User found, but no stats".
-            // BUT since you dropped tables, it might mean "User doesn't exist at all".
-            // Let's check if the USER exists first.
             const userRes = await fetch(`http://127.0.0.1:5000/api/user/${storedUserId}`);
-            
-            if (userRes.ok) {
-                // User exists, just needs onboarding
-                setAppState("onboarding");
-            } else {
-                // User ID is invalid (deleted from DB) -> FORCE LOGOUT
-                console.log("User ID invalid (deleted from DB). Logging out...");
-                localStorage.clear();
-                setAppState("auth");
-            }
+            if (userRes.ok) setAppState("onboarding");
+            else handleLogout();
         } else {
-            // Server Error -> Force Logout to be safe
             setAppState("auth");
         }
       } catch (err) {
-        console.error("Connection failed:", err);
         setAppState("auth");
       }
       setLoading(false);
@@ -148,20 +140,41 @@ export default function App() {
   };
 
   const handleApiSearch = async (query: string) => {
-    if (!userId) return;
+    if (!userId || !query.trim()) return;
+    
     try {
         const toastId = toast.loading(`Searching for "${query}"...`);
         const res = await fetch(`http://127.0.0.1:5000/api/food/search/${query}/${userId}`);
+        
         if (res.ok) {
             const data = await res.json();
             toast.dismiss(toastId);
             toast.success(`Found: ${data.meal_name}`);
-            fetchMeals(userId);
+            
+            // --- SMART DATA MAPPING ---
+            // If 'recipe' is missing, check 'instructions' (common in external APIs)
+            const recipeData = data.recipe || data.instructions || "";
+
+            const newResult: FoodWithRecipe = {
+                name: data.meal_name,
+                calories: data.calories,
+                protein: data.protein,
+                carbs: data.carbs,
+                fat: data.fats,
+                description: data.description || "Search Result",
+                image: data.image,
+                recipe: recipeData, 
+                ingredients: data.ingredients
+            };
+
+            setSidebarSearchResults(prev => [newResult, ...prev]);
         } else {
             toast.dismiss(toastId);
-            toast.error("Not found.");
+            toast.error("Food not found.");
         }
-    } catch (e) { toast.error("Search failed."); }
+    } catch (e) { 
+        toast.error("Search failed."); 
+    }
   };
 
   const handleRemoveMeal = async (id: string | number) => {
@@ -174,6 +187,7 @@ export default function App() {
       foodName: food.name, calories: food.calories, servings: 1,
       protein: food.protein, carbs: food.carbs, fats: food.fat
     });
+    setSelectedFood(null); // Close modal
   };
 
   const consumed = meals.reduce((acc, m) => acc + (m.calories * m.servings), 0);
@@ -192,12 +206,24 @@ export default function App() {
           <TibebPattern className="w-full h-full text-[#8b5a3c]" variant="subtle" />
         </div>
 
+        {/* DETAILS MODAL */}
+        <FoodDetailsModal 
+            food={selectedFood} 
+            isOpen={!!selectedFood} 
+            onClose={() => setSelectedFood(null)} 
+            onAddFood={handleAddFromDatabase} 
+        />
+
         <div className="bg-white/80 backdrop-blur-sm border-b border-[#8b5a3c]/20 sticky top-0 z-50">
           <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-[#8b5a3c] rounded-xl flex items-center justify-center text-white">
-                    <Utensils className="w-6 h-6" />
-                </div>
+                {userPicture ? (
+                    <img src={userPicture} alt="Profile" className="w-10 h-10 rounded-xl object-cover border-2 border-[#8b5a3c]" />
+                ) : (
+                    <div className="w-10 h-10 bg-[#8b5a3c] rounded-xl flex items-center justify-center text-white">
+                        <Utensils className="w-6 h-6" />
+                    </div>
+                )}
                 <div>
                     <h1 className="text-xl font-bold text-[#2d2520]">EAThiopia</h1>
                     <p className="text-xs text-[#786f66]">Welcome, {userName}</p>
@@ -205,23 +231,13 @@ export default function App() {
              </div>
              
              <div className="flex gap-2">
-                <Button 
-                    variant={currentPage === "home" ? "default" : "ghost"} 
-                    onClick={() => setCurrentPage("home")}
-                    className={currentPage === "home" ? "bg-[#8b5a3c] hover:bg-[#6b4423]" : ""}
-                >
+                <Button variant={currentPage === "home" ? "default" : "ghost"} onClick={() => setCurrentPage("home")} className={currentPage === "home" ? "bg-[#8b5a3c] hover:bg-[#6b4423]" : ""}>
                     <Home className="w-4 h-4 mr-2" /> Home
                 </Button>
-                <Button 
-                    variant={currentPage === "statistics" ? "default" : "ghost"} 
-                    onClick={() => setCurrentPage("statistics")}
-                    className={currentPage === "statistics" ? "bg-[#8b5a3c] hover:bg-[#6b4423]" : ""}
-                >
+                <Button variant={currentPage === "statistics" ? "default" : "ghost"} onClick={() => setCurrentPage("statistics")} className={currentPage === "statistics" ? "bg-[#8b5a3c] hover:bg-[#6b4423]" : ""}>
                     <BarChart3 className="w-4 h-4 mr-2" /> Statistics
                 </Button>
-                <Button variant="ghost" onClick={() => {
-                    if(confirm("Log out?")) handleLogout();
-                }}><LogOut className="w-4 h-4" /></Button>
+                <Button variant="ghost" onClick={() => { if(confirm("Log out?")) handleLogout(); }}><LogOut className="w-4 h-4" /></Button>
              </div>
           </div>
         </div>
@@ -243,7 +259,9 @@ export default function App() {
               <div className="lg:col-span-1 h-full min-h-[500px]">
                  <EthiopianFoodDatabase 
                     onAddFood={handleAddFromDatabase} 
+                    onViewRecipe={(food) => setSelectedFood(food)} 
                     onApiSearch={handleApiSearch} 
+                    searchResults={sidebarSearchResults}
                  />
               </div>
             </div>
