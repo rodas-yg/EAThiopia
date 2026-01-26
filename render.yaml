@@ -1,36 +1,24 @@
 version: "1"
 
-databases:
-  - name: eathiopia_db
-    databaseName: eathiopia_db
-    user: rodasgeberhiwet
-
 services:
-  # 1. THE BACKEND
   - type: web
     name: eathiopia-backend
     runtime: python
-    region: oregon
-    plan: free
+    plan: free            
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: eathiopia_db
-          property: connectionString
+        sync: false       
       - key: SECRET_KEY
         generateValue: true
       - key: PYTHON_VERSION
         value: 3.10.0
 
-  # 2. THE FRONTEND
   - type: web
     name: eathiopia-frontend
-    env: static
-    # Removed "region" (Static sites are global)
-    plan: free
+    env: static          
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
