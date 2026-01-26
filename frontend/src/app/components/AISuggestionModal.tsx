@@ -11,7 +11,17 @@ import { Textarea } from "./ui/textarea";
 import { Sparkles, Brain, Loader2, Send, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { TibebPattern } from "./TibebPattern";
-import { getNutritionAdvice, AIAdviceResponse } from "../../services/aiService";
+
+// --- DYNAMIC URL SETUP ---
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
+
+// Define the response shape locally so we don't depend on external files
+export interface AIAdviceResponse {
+  analysis: string;
+  answer_to_question?: string;
+  suggestion?: string;
+  encouragement?: string;
+}
 
 interface AISuggestionModalProps {
   isOpen: boolean;
@@ -42,14 +52,44 @@ export function AISuggestionModal({
     setError("");
     setAdvice(null);
 
-    const data = await getNutritionAdvice(userId, question);
+    try {
+      // --- DIRECT API CALL TO RENDER BACKEND ---
+      const res = await fetch(`${API_URL}/api/ai/advice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: userId,
+          question: question,
+          context: { remainingCalories, consumedCalories }
+        }),
+      });
 
-    if (data) {
-      setAdvice(data);
-    } else {
+      if (!res.ok) {
+        throw new Error("Server error");
+      }
+
+      const data = await res.json();
+
+      // Handle different response formats from backend to prevent UI crash
+      // If backend sends a simple string (advice), map it to the UI object
+      if (data.advice && typeof data.advice === 'string') {
+        setAdvice({
+          analysis: data.advice,
+          suggestion: "Check your daily logs for more details.",
+          encouragement: "Stay consistent!",
+          answer_to_question: question ? data.advice : undefined
+        });
+      } else {
+        // If backend sends full JSON object
+        setAdvice(data);
+      }
+
+    } catch (err) {
+      console.error(err);
       setError("Unable to connect to AI. Please check your connection.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const resetModal = () => {
@@ -60,7 +100,7 @@ export function AISuggestionModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl border-[#8b5a3c]/20 max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl border-[#8b5a3c]/20 max-h-[85vh] overflow-y-auto bg-white">
         <div className="absolute inset-0 opacity-5 pointer-events-none">
           <TibebPattern className="w-full h-full text-[#8b5a3c]" />
         </div>
@@ -148,7 +188,7 @@ export function AISuggestionModal({
                   <h4 className="font-bold text-blue-900 text-xs mb-2 uppercase tracking-wider flex items-center gap-2">
                     <Brain className="w-3 h-3" /> Analysis
                   </h4>
-                  <p className="text-blue-900 text-sm leading-relaxed">{advice.analysis}</p>
+                  <p className="text-blue-900 text-sm leading-relaxed whitespace-pre-line">{advice.analysis}</p>
                 </div>
 
                 {advice.answer_to_question && (
@@ -156,16 +196,18 @@ export function AISuggestionModal({
                     <h4 className="font-bold text-purple-900 text-xs mb-2 uppercase tracking-wider flex items-center gap-2">
                       <Send className="w-3 h-3" /> Your Answer
                     </h4>
-                    <p className="text-purple-900 text-sm leading-relaxed">{advice.answer_to_question}</p>
+                    <p className="text-purple-900 text-sm leading-relaxed whitespace-pre-line">{advice.answer_to_question}</p>
                   </div>
                 )}
 
-                <div className="p-4 bg-green-50/50 border border-green-100 rounded-lg">
-                  <h4 className="font-bold text-green-900 text-xs mb-2 uppercase tracking-wider flex items-center gap-2">
-                    <Sparkles className="w-3 h-3" /> Recommendation
-                  </h4>
-                  <p className="text-green-900 text-sm leading-relaxed">{advice.suggestion}</p>
-                </div>
+                {advice.suggestion && (
+                  <div className="p-4 bg-green-50/50 border border-green-100 rounded-lg">
+                    <h4 className="font-bold text-green-900 text-xs mb-2 uppercase tracking-wider flex items-center gap-2">
+                      <Sparkles className="w-3 h-3" /> Recommendation
+                    </h4>
+                    <p className="text-green-900 text-sm leading-relaxed whitespace-pre-line">{advice.suggestion}</p>
+                  </div>
+                )}
 
                 <p className="text-center italic text-[#786f66] text-sm mt-4 px-8">
                   "{advice.encouragement}"
