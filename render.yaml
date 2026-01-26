@@ -6,6 +6,7 @@ databases:
     user: rodasgeberhiwet
 
 services:
+  # 1. THE BACKEND
   - type: web
     name: eathiopia-backend
     runtime: python
@@ -24,8 +25,10 @@ services:
       - key: PYTHON_VERSION
         value: 3.10.0
 
+  # 2. THE FRONTEND
   - type: static
     name: eathiopia-frontend
+    # REMOVED "runtime: static" - This caused the error!
     region: oregon
     plan: free
     rootDir: frontend
