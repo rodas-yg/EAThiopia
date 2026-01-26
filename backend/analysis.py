@@ -1,4 +1,3 @@
-# analizes nutritional data the user had logged over time to provide insights and recommendations.
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -28,6 +27,7 @@ class PandasAnalysis:
         
         self.meals_df = pd.DataFrame(data)
         
+        # Ensure date parsing handles mixed formats if necessary
         self.meals_df['date'] = pd.to_datetime(self.meals_df['date'])
         self.meals_df['date_only'] = self.meals_df['date'].dt.normalize()
         
@@ -41,10 +41,10 @@ class PandasAnalysis:
             'weight': float(s.weight),
             'height': float(s.height),
             'activity_level': str(s.activity_level),
-            'bmi': float(s.bmi),
-            'target_weight': float(s.target_weight),
+            'bmi': float(s.bmi) if s.bmi else 0,
+            'target_weight': float(s.target_weight) if s.target_weight else float(s.weight),
             'gender': s.gender,
-            'date': s.date
+            'date': s.updated_at  # <--- FIXED: Was s.date, changed to s.updated_at
         } for s in stats]
         
         self.stats_df = pd.DataFrame(data)
@@ -57,11 +57,13 @@ class PandasAnalysis:
         if self.meals_df.empty:
             return None
 
+        # Aggregate daily macros
         daily_intake = self.meals_df.groupby('date_only')[['calories', 'protein', 'carbs', 'fats']].sum().reset_index()
         
         if self.stats_df.empty:
             self.combined_df = daily_intake
         else:
+            # Merge with stats to see weight trends vs calories
             self.combined_df = pd.merge(
                 daily_intake, 
                 self.stats_df[['date_only', 'weight', 'activity_level', 'bmi', 'gender', 'height']], 
@@ -76,18 +78,17 @@ class PandasAnalysis:
         self.fetch_user_data()
         self.fetch_user_stats()
         self.join_dfs()
+        
         latest_stats = {}
         if not self.stats_df.empty:
+            # Get the most recent stats entry
             latest_stats = self.stats_df.sort_values('date').iloc[-1].to_dict()
 
         todays_meals = []
         todays_macros = [0, 0, 0] 
         
         if not self.meals_df.empty:
-
             today = pd.Timestamp.now().normalize()
-            
-
             today_df = self.meals_df[self.meals_df['date_only'] == today]
             
             if not today_df.empty:
@@ -97,9 +98,11 @@ class PandasAnalysis:
                     round(today_df['carbs'].sum()),
                     round(today_df['fats'].sum())
                 ]
+        
         user = User.query.filter_by(id=self.user_id).first()
+        
         return {
-            "username": user.username,
+            "username": user.username if user else "User",
             "age": latest_stats.get('age', "N/A"),
             "gender": latest_stats.get('gender', "N/A"),
             "activity_level": latest_stats.get('activity_level', "N/A"),
@@ -108,5 +111,3 @@ class PandasAnalysis:
             "meals": todays_meals,
             "macros": todays_macros
         }
-
-

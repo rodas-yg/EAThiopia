@@ -15,6 +15,7 @@ else:
 class AIService:
     def __init__(self):
         try:
+            # Use 'gemini-1.5-flash' (Current fastest/cheapest model)
             self.model = genai.GenerativeModel("gemini-2.5-flash")
         except Exception as e:
             print(f"Error initializing Gemini: {e}")
@@ -36,7 +37,6 @@ class AIService:
         gender = data.get("gender", "N/A")
         activity_level = data.get("activity_level", "N/A")
         
-        target_calories = data.get("target_calories", "N/A")
         current_weight = data.get("current_weight", "N/A")
         target_weight = data.get("target_weight", "N/A")
 
@@ -47,21 +47,23 @@ class AIService:
         p = macros[0] if len(macros) > 0 else 0
         c = macros[1] if len(macros) > 1 else 0
         f = macros[2] if len(macros) > 2 else 0
+        
         user_context = f"User: {username} | Age: {age} | Gender: {gender} | Activity: {activity_level}"
-        history_context = f"Weight: {current_weight} -> Target: {target_weight} | Meals: {meals_str} | Macros: {p}g P, {c}g C, {f}g F"
+        history_context = f"Weight: {current_weight} -> Target: {target_weight} | Meals Today: {meals_str} | Macros: {p}g P, {c}g C, {f}g F"
 
         prompt = f"""
-        You are an expert nutritionist.
+        You are an expert nutritionist for the app EAThiopia.
         Profile: {user_context}
         Today's Log: {history_context}
         """
 
         if question:
-            prompt += f"\nUser Question: {question}\nAnswer this specifically."
+            prompt += f"\nUser Question: {question}\nTask: Answer this specifically."
+        else:
+            prompt += "\nTask: Provide a 1-sentence analysis of their day and 1 actionable suggestion."
 
         prompt += """
-        Task: Provide JSON output only.
-        Format:
+        REQUIRED OUTPUT FORMAT (JSON ONLY):
         {
             "analysis": "1 sentence summary.",
             "suggestion": "Specific recommendation.",

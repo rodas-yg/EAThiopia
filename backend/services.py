@@ -32,7 +32,7 @@ def generate_ai_recipe(food_name):
         
     try:
         # Use 'gemini-1.5-flash' (Faster/Newer) or fallback to 'gemini-pro'
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         prompt = f"""
         Write a simple cooking recipe for {food_name}.

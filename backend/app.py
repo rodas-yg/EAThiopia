@@ -4,8 +4,6 @@ from flask_login import LoginManager
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timezone
 from sqlalchemy import or_
-
-# --- INTERNAL IMPORTS ---
 from models import db, User, MealLog, UserStats, Recipe, Ingredient, RecipeIngredient
 from validators import validate_biometrics
 from services import (
@@ -25,7 +23,7 @@ app = Flask(__name__)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://rodasgeberhiwet:rodas1018@localhost:5432/eathiopia_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = 'super_secret_key_12345_change_me_in_production'
+app.config['SECRET_KEY'] = 'abc123'
 
 db.init_app(app)
 
