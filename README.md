@@ -18,7 +18,7 @@ The system leverages **Google Gemini AI** for on-the-fly recipe generation and *
 ## 🚀 Key Features
 
 ### 🧠 Artificial Intelligence & Machine Learning
-* **Generative AI Chef (Google Gemini):** When external databases (like USDA) provide nutrition data but lack cooking instructions, the app dynamically generates detailed recipes, ingredients, and cooking times using Large Language Models (LLM).
+* **Generative AI (Google Gemini):** When external databases (like USDA) provide nutrition data but lack cooking instructions, the app dynamically generates detailed recipes, ingredients, and cooking times using Large Language Models (LLM).
 * **Predictive Weight Analytics (Scikit-Learn):** A custom **Linear Regression model** analyzes user weight logs over time to calculate the user's daily rate of change. It provides a real-time forecasted date for when the user will reach their goal weight, adapting automatically to fluctuations in progress.
 
 ### 📊 Backend & Data Engineering
@@ -77,3 +77,4 @@ pip install -r requirements.txt
 
 # Run the server
 python app.py
+
