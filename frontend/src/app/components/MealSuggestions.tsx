@@ -5,13 +5,16 @@ import { RefreshCw, Plus, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
 import { TibebPattern } from "./TibebPattern";
 import { AISuggestionModal } from "./AISuggestionModal";
-import { FoodWithRecipe } from "./FoodDetailsModal"; // Correct import
+import { FoodWithRecipe } from "./FoodDetailsModal"; 
+
+// --- DYNAMIC URL ---
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
 
 interface MealSuggestionsProps {
   remainingCalories: number;
   consumedCalories: number;
   onAddSuggestion: (food: FoodWithRecipe) => void;
-  userId: string; // Required prop
+  userId: string;
 }
 
 const ETHIOPIAN_FOODS: FoodWithRecipe[] = [
@@ -85,8 +88,12 @@ export function MealSuggestions({
       : ETHIOPIAN_FOODS.sort((a,b) => a.calories - b.calories).slice(0, 3);
 
     const shuffled = [...pool].sort((a, b) => {
-      const hashA = (parseInt(a.id) * (seed + 1)) % 100;
-      const hashB = (parseInt(b.id) * (seed + 1)) % 100;
+      // --- FIX: Safely convert ID to string before parsing ---
+      const idA = parseInt(String(a.id || "0"));
+      const idB = parseInt(String(b.id || "0"));
+      
+      const hashA = (idA * (seed + 1)) % 100;
+      const hashB = (idB * (seed + 1)) % 100;
       return hashA - hashB;
     });
 
@@ -174,7 +181,7 @@ export function MealSuggestions({
         onClose={() => setIsAIModalOpen(false)}
         remainingCalories={remainingCalories}
         consumedCalories={consumedCalories}
-        userId={userId} // Connection passed!
+        userId={userId} 
       />
     </>
   );

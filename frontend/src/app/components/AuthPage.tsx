@@ -5,11 +5,10 @@ import { Label } from "./ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
 import { Utensils, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { jwtDecode } from "jwt-decode";
 import { toast } from "sonner";
 import { TibebPattern } from "./TibebPattern"; 
 
-const API_URL = "";
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
 
 export function AuthPage({ onAuth }: { onAuth: () => void }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -19,24 +18,32 @@ export function AuthPage({ onAuth }: { onAuth: () => void }) {
   const handleGoogleSuccess = async (credentialResponse: any) => {
     setLoading(true);
     try {
+      if (!credentialResponse.credential) throw new Error("No credential received");
+
       const res = await fetch(`${API_URL}/api/auth/google`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: credentialResponse.credential })
       });
 
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      
-      localStorage.setItem('user_id', data.user_id);
-      localStorage.setItem('username', data.username);
-      if (data.picture) localStorage.setItem('user_picture', data.picture);
-      
-      toast.success(`Welcome, ${data.username}!`);
-      onAuth();
-    } catch (error) {
+      const text = await res.text();
+      try {
+          const data = JSON.parse(text);
+          if (!res.ok) throw new Error(data.error || text);
+
+          localStorage.setItem('user_id', data.user_id);
+          localStorage.setItem('username', data.username);
+          if (data.picture) localStorage.setItem('user_picture', data.picture);
+          
+          toast.success(`Welcome, ${data.username}!`);
+          onAuth();
+      } catch (e) {
+          console.error("Parse Error:", text);
+          throw new Error("Server response was invalid.");
+      }
+    } catch (error: any) {
       console.error("Auth Error:", error);
-      toast.error("Google Login Failed. Check Console.");
+      toast.error(error.message || "Login Failed");
     } finally {
       setLoading(false);
     }
@@ -51,6 +58,7 @@ export function AuthPage({ onAuth }: { onAuth: () => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
+      
       const data = await res.json();
       if (res.ok) {
         localStorage.setItem('user_id', data.user_id);

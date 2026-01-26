@@ -6,6 +6,9 @@ import { ScrollArea } from "./ui/scroll-area";
 import { Search, Plus, ChefHat, Sparkles } from "lucide-react";
 import { FoodWithRecipe } from "./FoodDetailsModal"; 
 
+// --- DYNAMIC URL (Not strictly used in this file but good for consistency) ---
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
+
 interface FoodDatabaseProps {
   onAddFood: (food: FoodWithRecipe) => void;
   onViewRecipe: (food: FoodWithRecipe) => void;

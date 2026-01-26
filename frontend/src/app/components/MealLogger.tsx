@@ -9,6 +9,9 @@ import { motion, AnimatePresence } from "motion/react";
 import { TibebPattern } from "./TibebPattern";
 import { FoodDetailsModal, FoodWithRecipe } from "./FoodDetailsModal";
 
+// --- DYNAMIC URL ---
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
+
 export interface MealEntry {
   id: string | number;
   foodName: string;
@@ -54,8 +57,8 @@ export function MealLogger({ meals, onAddMeal, onRemoveMeal }: MealLoggerProps) 
   const performSearch = async (query: string) => {
     setIsSearching(true);
     try {
-      // Use the Recipe Search endpoint (Does NOT auto-log)
-      const res = await fetch(`http://127.0.0.1:5000/api/recipes/search?query=${query}`);
+      // --- UPDATED URL ---
+      const res = await fetch(`${API_URL}/api/recipes/search?query=${query}`);
       if (res.ok) {
         const data = await res.json();
         setSearchResults(data);

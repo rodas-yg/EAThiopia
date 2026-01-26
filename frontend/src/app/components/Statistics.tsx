@@ -3,6 +3,9 @@ import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
 import { MealEntry } from "./MealLogger";
 import { Activity, Target, TrendingUp, Calendar } from "lucide-react";
 
+// --- DYNAMIC URL ---
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
+
 interface StatisticsProps {
   meals: MealEntry[];
   calorieTarget: number;
@@ -15,7 +18,8 @@ export function Statistics({ meals, calorieTarget }: StatisticsProps) {
   useEffect(() => {
     const userId = localStorage.getItem('user_id');
     if (userId) {
-        fetch(`http://127.0.0.1:5000/api/user/${userId}/prediction`)
+        // --- UPDATED URL ---
+        fetch(`${API_URL}/api/user/${userId}/prediction`)
             .then(res => res.json())
             .then(data => setPrediction(data))
             .catch(err => console.error(err));

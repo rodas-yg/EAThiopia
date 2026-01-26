@@ -17,7 +17,11 @@ import { Label } from "./components/ui/label";
 import { TibebPattern } from "./components/TibebPattern";
 import { Toaster, toast } from 'sonner';
 
+// --- CONFIGURATION ---
 const GOOGLE_CLIENT_ID = "905920031102-dh2ss3maqm4k4jt1fbjaobcej56c08eq.apps.googleusercontent.com";
+
+// This selects the Render Backend URL in production, or Localhost in development
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000";
 
 type AppState = "auth" | "onboarding" | "app";
 type Page = "home" | "statistics";
@@ -45,9 +49,8 @@ export default function App() {
       const storedUserId = localStorage.getItem('user_id');
       
       if (!storedUserId || storedUserId === "undefined") {
-        handleLogout(); 
         setLoading(false);
-        return;
+        return; // Stay on auth page
       }
 
       setUserId(storedUserId);
@@ -58,21 +61,21 @@ export default function App() {
       if (storedPic) setUserPicture(storedPic);
 
       try {
-        const res = await fetch(`http://127.0.0.1:5000/api/user/${storedUserId}/stats/latest`);
+        const res = await fetch(`${API_URL}/api/user/${storedUserId}/stats/latest`);
         if (res.ok) {
             const data = await res.json();
             if (data.calorie_target) setCalorieTarget(data.calorie_target);
             await fetchMeals(storedUserId);
             setAppState("app");
         } else if (res.status === 404) {
-            // Check if user exists but has no stats
-            const userRes = await fetch(`http://127.0.0.1:5000/api/user/${storedUserId}`);
+            const userRes = await fetch(`${API_URL}/api/user/${storedUserId}`);
             if (userRes.ok) setAppState("onboarding");
             else handleLogout();
         } else {
             setAppState("auth");
         }
       } catch (err) {
+        console.error("Init Error:", err);
         setAppState("auth");
       }
       setLoading(false);
@@ -83,7 +86,7 @@ export default function App() {
 
   const fetchMeals = async (id: string) => {
     try {
-      const res = await fetch(`http://127.0.0.1:5000/api/user/${id}/meal-log`);
+      const res = await fetch(`${API_URL}/api/user/${id}/meal-log`);
       if (res.ok) {
         const data = await res.json();
         setMeals(data.map((m: any) => ({
@@ -121,7 +124,8 @@ export default function App() {
 
     if(userId) {
         try {
-            const res = await fetch(`http://127.0.0.1:5000/api/user/${userId}/meal-log`, {
+            // --- UPDATED URL ---
+            const res = await fetch(`${API_URL}/api/user/${userId}/meal-log`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -148,7 +152,8 @@ export default function App() {
     if (!userId || !query.trim()) return;
     try {
         const toastId = toast.loading(`Searching for "${query}"...`);
-        const res = await fetch(`http://127.0.0.1:5000/api/food/search/${query}/${userId}`);
+        // --- UPDATED URL ---
+        const res = await fetch(`${API_URL}/api/food/search/${query}/${userId}`);
         
         if (res.ok) {
             const data = await res.json();
@@ -178,7 +183,8 @@ export default function App() {
 
   const handleRemoveMeal = async (id: string | number) => {
     setMeals(meals.filter(meal => meal.id !== id));
-    if (userId) await fetch(`http://127.0.0.1:5000/api/user/${userId}/meal-log/${id}`, { method: 'DELETE' });
+    // --- UPDATED URL ---
+    if (userId) await fetch(`${API_URL}/api/user/${userId}/meal-log/${id}`, { method: 'DELETE' });
   };
 
   const handleAddFromDatabase = (food: FoodWithRecipe) => {
@@ -192,7 +198,8 @@ export default function App() {
   const handleUpdateWeight = async () => {
     if(!userId || !newWeight) return;
     try {
-        const res = await fetch(`http://127.0.0.1:5000/api/user/${userId}/weight`, {
+        // --- UPDATED URL ---
+        const res = await fetch(`${API_URL}/api/user/${userId}/weight`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ weight: parseFloat(newWeight) })
@@ -209,17 +216,14 @@ export default function App() {
 
   const consumed = meals.reduce((acc, m) => acc + (m.calories * m.servings), 0);
 
-  // --- RENDERING ---
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-        {/* GLOBAL BACKGROUND PATTERN */}
         <div className="min-h-screen bg-[#faf8f5] relative">
             <Toaster position="top-center" />
             <div className="fixed inset-0 opacity-15 pointer-events-none z-0">
                 <TibebPattern className="w-full h-full text-[#8b5a3c]" variant="subtle" />
             </div>
 
-            {/* CONTENT LAYER */}
             <div className="relative z-10">
                 {loading ? (
                     <div className="h-screen flex items-center justify-center">
@@ -230,7 +234,6 @@ export default function App() {
                 ) : appState === "onboarding" ? (
                     <Onboarding onComplete={handleOnboardingComplete} />
                 ) : (
-                    /* MAIN APP DASHBOARD */
                     <div>
                         <FoodDetailsModal food={selectedFood} isOpen={!!selectedFood} onClose={() => setSelectedFood(null)} onAddFood={handleAddFromDatabase} />
 
