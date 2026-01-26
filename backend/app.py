@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
+import os
 from flask_login import LoginManager
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timezone
@@ -20,12 +21,12 @@ from services import (
 )
 from ai import AIService
 from analysis import PandasAnalysis
-
+database_url = os.environ.get('DATABASE_URL')
 app = Flask(__name__)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://rodasgeberhiwet:rodas1018@localhost:5432/eathiopia_db'
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = 'super_secret_key_12345_change_me_in_production'
+app.config['SECRET_KEY'] = ''
 
 db.init_app(app)
 
