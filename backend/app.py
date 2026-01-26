@@ -399,7 +399,13 @@ def get_advice():
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
+@app.route('/init-db')
+def init_db():
+    try:
+        db.create_all()
+        return "Database tables created successfully! You can now log in."
+    except Exception as e:
+        return f"Error creating tables: {str(e)}"
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
