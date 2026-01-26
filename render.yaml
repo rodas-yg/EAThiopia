@@ -6,6 +6,7 @@ databases:
     user: rodasgeberhiwet
 
 services:
+  # 1. THE BACKEND
   - type: web
     name: eathiopia-backend
     runtime: python
@@ -24,21 +25,19 @@ services:
       - key: PYTHON_VERSION
         value: 3.10.0
 
-  - type: web                 
+  # 2. THE FRONTEND
+  - type: web
     name: eathiopia-frontend
-    env: static               
-    region: oregon
+    env: static
+    # Removed "region" (Static sites are global)
     plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
-    staticPublishPath: dist   
+    staticPublishPath: dist
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: eathiopia-backend
-          property: url
+        value: https://eathiopia-backend.onrender.com
