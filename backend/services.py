@@ -417,7 +417,7 @@ def predict_goal_date(user_id):
     
     slope = model.coef_[0] 
     current_weight = stats.weight
-    goal = stats.target_weight # Fixed: Use 'target_weight'
+    goal = stats.target_weight
 
     if slope == 0:
          return {"status": "stalled", "message": "Weight is stable."}
